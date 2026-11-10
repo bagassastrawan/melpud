@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
+    "build": "node --input-type=module -e \"import fs from 'node:fs'; fs.mkdirSync('dist', { recursive: true }); for (const f of ['index.html', 'styles.css', 'app.js', 'core.js', 'db.js', 'supabase-config.js']) fs.copyFileSync(f, 'dist/' + f);\"",
     "test": "node --test test/engine.test.js"
   }
 }
