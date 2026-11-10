@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Melpud - Operational & Consignment Management System</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js for PRD Section 4 Interactive Charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Mobile Header -->
+    <header class="mobile-topbar">
+      <button id="mobileMenuBtn" class="btn-icon" aria-label="Buka Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+      <div class="brand-inline">
+        <span class="brand-title">MELPUD</span>
+        <span class="brand-badge">Ops v2.0</span>
+      </div>
+      <div class="topbar-user-mini">
+        <span class="user-avatar-mini">M</span>
+      </div>
+    </header>
+
+    <!-- Sidebar Navigation (PRD Section 6) -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand-wrapper">
+          <div class="brand-symbol">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a9 9 0 0 0-9 9c0 4.97 4.03 9 9 9s9-4.03 9-9a9 9 0 0 0-9-9z"></path>
+              <path d="M12 6v6l4 2"></path>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1 class="brand-name">MELPUD</h1>
+            <p class="brand-tagline">Consignment & Operations</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-view="dashboard">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect></svg>
+          <span>Ringkasan Dashboard</span>
+        </button>
+        <button class="nav-item" data-view="consignment">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          <span>Konsinyasi & Outlet</span>
+        </button>
+        <button class="nav-item" data-view="expenses">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"></path><line x1="8" y1="8" x2="16" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="12" y2="16"></line></svg>
+          <span>Buku Kas Belanja</span>
+        </button>
+        <button class="nav-item" data-view="master">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-7"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg>
+          <span>Master Produk & Outlet</span>
+        </button>
+        <button class="nav-item" data-view="analytics">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <span>Analitik Diagram</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status-panel">
+          <div class="status-row">
+            <span class="status-label">Metode Kas:</span>
+            <span class="status-val">Cash Basis Riil</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Siklus:</span>
+            <span class="status-val">4 Tahap Konsinyasi</span>
+          </div>
+          <div class="system-sync-pill" id="syncStatusPill">
+            <span class="sync-dot" id="syncStatusDot"></span>
+            <span id="syncStatusText">Memuat koneksi...</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Topbar Status (PRD Section 6) -->
+      <header class="topbar">
+        <div class="topbar-stats">
+          <div class="topbar-stat-chip chip-cash">
+            <span class="chip-label">Saldo Kas Bersih:</span>
+            <strong class="chip-value" id="topbarNetCash">Rp 0</strong>
+          </div>
+          <div class="topbar-stat-chip chip-receivable">
+            <span class="chip-label">Piutang Berjalan:</span>
+            <strong class="chip-value" id="topbarReceivables">Rp 0</strong>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="user-pill">
+            <div class="user-avatar">M</div>
+            <div class="user-meta">
+              <span class="user-name">Melpud Owner</span>
+              <span class="user-role">Administrator</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- View: Ringkasan Dashboard (PRD Section 6) -->
+      <div id="view-dashboard" class="content-view active">
+        <!-- 4 Financial Metric Cards (PRD Section 3 & 6) -->
+        <section class="metrics-grid">
+          <div class="metric-card metric-receivable">
+            <div class="metric-top">
+              <span class="metric-title">Total Piutang Belum Dibayar</span>
+              <span class="metric-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              </span>
+            </div>
+            <div class="metric-value" id="metricReceivables">Rp 0</div>
+            <div class="metric-foot">Akumulasi tagihan UNPAID outlet</div>
+          </div>
+
+          <div class="metric-card metric-cashin">
+            <div class="metric-top">
+              <span class="metric-title">Total Kas Masuk (Lunas)</span>
+              <span class="metric-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+              </span>
+            </div>
+            <div class="metric-value" id="metricCashIn">Rp 0</div>
+            <div class="metric-foot">Hanya batch berstatus PAID</div>
+          </div>
+
+          <div class="metric-card metric-expense">
+            <div class="metric-top">
+              <span class="metric-title">Total Belanja Bahan</span>
+              <span class="metric-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+              </span>
+            </div>
+            <div class="metric-value" id="metricExpenses">Rp 0</div>
+            <div class="metric-foot">Auto-deduction dari kas penjualan</div>
+          </div>
+
+          <div class="metric-card metric-netcash">
+            <div class="metric-top">
+              <span class="metric-title">Saldo Kas Bersih Riil</span>
+              <span class="metric-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+              </span>
+            </div>
+            <div class="metric-value" id="metricNetCash">Rp 0</div>
+            <div class="metric-foot" id="metricProfitProjection">Proyeksi Laba Bersih: Rp 0</div>
+          </div>
+        </section>
+
+        <!-- Low Cash Alert (PRD Section 4.2) -->
+        <div id="lowCashAlert" class="alert-box alert-warning hidden">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div class="alert-content">
+            <strong>Peringatan Saldo Kas Kritis:</strong> Saldo kas operasional berada di bawah batas minimum (Rp 50.000). Segera rekonsiliasi dan tagih piutang outlet mitra.
+          </div>
+        </div>
+
+        <!-- 5 Registered Partner Outlets Section (PRD Section 2.1 & 6) -->
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">5 Titik Outlet Mitra Terdaftar</h2>
+              <p class="section-subtitle">Status konsinyasi lapangan dan piutang berjalan per titik mitra</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="btnOpenNewOutlet">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>Tambah Outlet Baru</span>
+            </button>
+          </div>
+
+          <div class="outlets-grid" id="outletsGrid">
+            <!-- Outlet cards rendered dynamically -->
+          </div>
+        </section>
+
+        <!-- Visual Analytics Dashboard Section (PRD Section 4) -->
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Visualisasi Analitik & Laporan Periodik</h2>
+              <p class="section-subtitle">Laporan mingguan, bulanan per bulan, dan kuartalan beserta tren kas real-time</p>
+            </div>
+            <div class="report-controls">
+              <input type="month" id="reportMonthInput" class="report-month-input" aria-label="Pilih Bulan Laporan">
+              <div class="chart-filter-group">
+                <button class="filter-chip" data-period="week">Mingguan</button>
+                <button class="filter-chip" data-period="month">Bulanan</button>
+                <button class="filter-chip" data-period="quarter">Kuartalan</button>
+                <button class="filter-chip active" data-period="all">Semua</button>
+              </div>
+            </div>
+          </div>
+          <div class="report-summary-strip" id="reportPeriodSummary">
+            <div><span style="color:var(--text-muted)">Periode Laporan:</span> <strong id="reportPeriodLabel">Semua Waktu</strong></div>
+            <div class="report-strip-metrics">
+              <span>Kas Masuk: <strong id="reportCashIn">Rp 0</strong></span>
+              <span>Pengeluaran: <strong id="reportExpenses">Rp 0</strong></span>
+              <span>Laba Bersih: <strong id="reportNetProfit">Rp 0</strong></span>
+            </div>
+          </div>
+          <div class="charts-grid">
+            <div class="chart-panel">
+              <div class="chart-panel-header">
+                <h3 class="chart-panel-title">Kinerja Finansial (Kas vs Beban vs Laba)</h3>
+              </div>
+              <div class="chart-canvas-wrapper">
+                <canvas id="financialBarChart"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-panel">
+              <div class="chart-panel-header">
+                <h3 class="chart-panel-title">Komposisi Pengeluaran Bahan</h3>
+              </div>
+              <div class="chart-canvas-wrapper chart-donut-wrapper">
+                <canvas id="expenseDonutChart"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="chart-panel chart-fullwidth">
+            <div class="chart-panel-header">
+              <h3 class="chart-panel-title">Tren Fluktuasi Saldo Kas Riil Harian</h3>
+              <span class="chart-threshold-badge">Batas Aman: Rp 50.000</span>
+            </div>
+            <div class="chart-canvas-wrapper chart-line-wrapper">
+              <canvas id="cashTrendLineChart"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- Recent Transactions Table (PRD Section 6) -->
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Log Transaksi Terakhir</h2>
+              <p class="section-subtitle">Pergerakan konsinyasi pudding dan pencatatan belanja bahan operasional</p>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Jenis</th>
+                  <th>Titik / Keterangan</th>
+                  <th>Detail Barang / Item</th>
+                  <th>Status Alur</th>
+                  <th>Status Kas</th>
+                  <th class="text-right">Nominal</th>
+                </tr>
+              </thead>
+              <tbody id="recentTransactionsTableBody">
+                <!-- Rows rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- View: Konsinyasi & Outlet (PRD Section 2) -->
+      <div id="view-consignment" class="content-view">
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Manajemen Konsinyasi & Rekonsiliasi</h2>
+              <p class="section-subtitle">Alur 4 tahap: Drop Batch -> Rekonsiliasi Sisa -> Status Pembayaran -> Akumulasi Piutang</p>
+            </div>
+            <button class="btn btn-primary" id="btnManualDrop">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>+ Drop Batch Baru</span>
+            </button>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Outlet Mitra</th>
+                  <th>Varian</th>
+                  <th>Qty Titip</th>
+                  <th>Qty Sisa (Retur)</th>
+                  <th>Qty Terjual</th>
+                  <th>Total Tagihan</th>
+                  <th>Status Batch</th>
+                  <th>Status Bayar</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="consignmentTableBody">
+                <!-- Rows rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- View: Buku Kas Belanja (PRD Section 3) -->
+      <div id="view-expenses" class="content-view">
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Buku Kas Belanja & Auto-Deduction</h2>
+              <p class="section-subtitle">Pembelian bahan baku, kemasan, dan operasional yang otomatis memotong saldo kas penjualan</p>
+            </div>
+            <button class="btn btn-primary" id="btnManualExpense">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <span>+ Catat Belanja Bahan</span>
+            </button>
+          </div>
+
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th>Kategori Biaya</th>
+                  <th>Deskripsi Item</th>
+                  <th class="text-right">Nominal Pengeluaran</th>
+                  <th>Pemotongan Kas</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="expensesTableBody">
+                <!-- Rows rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- View: Master Produk & Outlet (PRD Section 2.1) -->
+      <div id="view-master" class="content-view">
+        <div class="master-columns">
+          <section class="section-block">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Katalog Varian Produk</h2>
+                <p class="section-subtitle">Tabel dinamis dengan harga satuan independen</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btnOpenNewProduct">
+                + Tambah Varian
+              </button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nama Varian</th>
+                    <th class="text-right">Harga Satuan</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="masterProductsTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Master Titik Outlet Mitra</h2>
+                <p class="section-subtitle">Daftar titik sebaran konsinyasi</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="btnOpenNewOutlet2">
+                + Tambah Outlet
+              </button>
+            </div>
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Nama Outlet</th>
+                    <th>Kontak / Keterangan</th>
+                    <th>Status Keaktifan</th>
+                  </tr>
+                </thead>
+                <tbody id="masterOutletsTableBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- View: Analitik Diagram Lengkap (PRD Section 4) -->
+      <div id="view-analytics" class="content-view">
+        <section class="section-block">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Analitik Finansial & Arus Kas Mendalam</h2>
+              <p class="section-subtitle" id="analyticsPeriodSubtitle">Periode aktif: Semua Waktu (sesuaikan di filter dashboard atau di bawah)</p>
+            </div>
+            <div class="report-controls">
+              <input type="month" id="analyticsMonthInput" class="report-month-input" aria-label="Pilih Bulan Analitik">
+              <div class="chart-filter-group">
+                <button class="filter-chip" data-period="week">Mingguan</button>
+                <button class="filter-chip" data-period="month">Bulanan</button>
+                <button class="filter-chip" data-period="quarter">Kuartalan</button>
+                <button class="filter-chip active" data-period="all">Semua</button>
+              </div>
+            </div>
+          </div>
+          <div class="analytics-detail-grid">
+            <div class="chart-panel">
+              <div class="chart-panel-header">
+                <h3 class="chart-panel-title">1. Diagram Batang - Kinerja Finansial</h3>
+                <span class="badge-neutral">Komparasi 3 Indikator</span>
+              </div>
+              <p class="chart-desc">Menampilkan perbandingan Kas Masuk (Lunas), Pengeluaran Bahan, dan Laba Bersih.</p>
+              <div class="chart-canvas-wrapper">
+                <canvas id="financialBarChartDetail"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-panel">
+              <div class="chart-panel-header">
+                <h3 class="chart-panel-title">2. Diagram Donat - Komposisi Pengeluaran</h3>
+                <span class="badge-neutral">Proporsi 3 Kategori Biaya</span>
+              </div>
+              <p class="chart-desc">Proporsi alokasi dana: Bahan Baku Utama, Kemasan & Cup, dan Operasional Lainnya.</p>
+              <div class="chart-canvas-wrapper chart-donut-wrapper">
+                <canvas id="expenseDonutChartDetail"></canvas>
+              </div>
+            </div>
+
+            <div class="chart-panel chart-fullwidth">
+              <div class="chart-panel-header">
+                <h3 class="chart-panel-title">3. Diagram Tren Saldo Kas Riil Harian</h3>
+                <span class="chart-threshold-badge">Peringatan Batas Minimum: Rp 50.000</span>
+              </div>
+              <p class="chart-desc">Fluktuasi saldo kas operasional setelah dikurangi belanja bahan setiap hari secara cash-basis.</p>
+              <div class="chart-canvas-wrapper chart-line-wrapper">
+                <canvas id="cashTrendLineChartDetail"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modals -->
+  <!-- Modal 1: Drop Batch -->
+  <div id="modalDropBatch" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Penitipan Pudding Baru (Drop Batch)</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formDropBatch" class="modal-form">
+        <div class="form-group">
+          <label for="dropDate">Tanggal Penitipan</label>
+          <input type="date" id="dropDate" required>
+        </div>
+        <div class="form-group">
+          <label for="dropOutlet">Outlet Mitra Rekanan</label>
+          <select id="dropOutlet" required></select>
+        </div>
+        <div class="form-group">
+          <label for="dropProduct">Varian Pudding</label>
+          <select id="dropProduct" required></select>
+        </div>
+        <div class="form-group">
+          <label for="dropQty">Jumlah Titip (Cup)</label>
+          <input type="number" id="dropQty" min="1" value="10" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Drop Batch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Rekonsiliasi & Retur -->
+  <div id="modalReconcile" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Rekonsiliasi & Pencatatan Retur</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formReconcile" class="modal-form">
+        <input type="hidden" id="recBatchId">
+        <div class="info-banner" id="recBatchInfo"></div>
+        <div class="form-group">
+          <label for="recQtyReturned">Jumlah Sisa Pudding yang Diambil Kembali (Cup)</label>
+          <input type="number" id="recQtyReturned" min="0" value="0" required>
+        </div>
+        <div class="form-calc-preview">
+          <div class="calc-row"><span>Qty Terjual:</span> <strong id="calcSoldQty">0 cup</strong></div>
+          <div class="calc-row"><span>Total Tagihan:</span> <strong id="calcTotalBill">Rp 0</strong></div>
+        </div>
+        <div class="form-group">
+          <label for="recPaymentStatus">Status Pembayaran Tagihan</label>
+          <select id="recPaymentStatus" required>
+            <option value="UNPAID">UNPAID (Belum Bayar / Piutang)</option>
+            <option value="PAID">PAID (Langsung Lunas / Kas Masuk)</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Rekonsiliasi</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2b: Edit Transaksi / Batch Konsinyasi -->
+  <div id="modalEditBatch" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit Transaksi Konsinyasi</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formEditBatch" class="modal-form">
+        <input type="hidden" id="editBatchId">
+        <div class="form-group">
+          <label for="editBatchDate">Tanggal</label>
+          <input type="date" id="editBatchDate" required>
+        </div>
+        <div class="form-group">
+          <label for="editBatchOutlet">Outlet Mitra</label>
+          <select id="editBatchOutlet" required></select>
+        </div>
+        <div class="form-group">
+          <label for="editBatchProduct">Varian Produk</label>
+          <select id="editBatchProduct" required></select>
+        </div>
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="editBatchQtyDrop">Qty Titip (Cup)</label>
+            <input type="number" id="editBatchQtyDrop" min="1" required>
+          </div>
+          <div class="form-group">
+            <label for="editBatchStatus">Status Batch</label>
+            <select id="editBatchStatus" required>
+              <option value="ACTIVE">ACTIVE (Berjalan)</option>
+              <option value="RECONCILED">RECONCILED (Retur)</option>
+            </select>
+          </div>
+        </div>
+        <div id="editReconciledFields" class="form-row-2">
+          <div class="form-group">
+            <label for="editBatchQtyReturned">Qty Sisa (Retur)</label>
+            <input type="number" id="editBatchQtyReturned" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label for="editBatchPaymentStatus">Status Pembayaran</label>
+            <select id="editBatchPaymentStatus">
+              <option value="UNPAID">UNPAID (Piutang)</option>
+              <option value="PAID">PAID (Lunas)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-calc-preview">
+          <div class="calc-row"><span>Qty Terjual:</span> <strong id="editCalcSoldQty">0 cup</strong></div>
+          <div class="calc-row"><span>Total Tagihan:</span> <strong id="editCalcTotalBill">Rp 0</strong></div>
+        </div>
+        <div class="modal-actions modal-actions-split">
+          <button type="button" id="btnDeleteBatch" class="btn btn-danger-outline btn-sm">Hapus</button>
+          <div style="display:flex;gap:10px;">
+            <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+            <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 3: Catat Belanja Bahan (Expense) -->
+  <div id="modalExpense" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Catat Belanja Bahan (Auto-Deduction)</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formExpense" class="modal-form">
+        <div class="form-group">
+          <label for="expDate">Tanggal Transaksi</label>
+          <input type="date" id="expDate" required>
+        </div>
+        <div class="form-group">
+          <label for="expCategory">Kategori Pengeluaran</label>
+          <select id="expCategory" required>
+            <option value="Bahan Baku Utama">Bahan Baku Utama (Susu, Coklat, Agar, Gula)</option>
+            <option value="Kemasan">Kemasan (Cup, Sendok, Kardus, Stiker)</option>
+            <option value="Operasional Lainnya">Operasional Lainnya (Bensin, Transport, dll)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="expDesc">Keterangan / Rincian Belanja</label>
+          <input type="text" id="expDesc" placeholder="Contoh: Susu kental manis 2 kaleng, coklat bubuk" required>
+        </div>
+        <div class="form-group">
+          <label for="expAmount">Nominal Biaya (Rp)</label>
+          <input type="number" id="expAmount" min="100" step="500" placeholder="Contoh: 45000" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan & Potong Kas</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 4: Tambah Outlet Baru -->
+  <div id="modalNewOutlet" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Tambah Titik Outlet Mitra Baru</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formNewOutlet" class="modal-form">
+        <div class="form-group">
+          <label for="newOutletName">Nama Outlet Mitra</label>
+          <input type="text" id="newOutletName" placeholder="Contoh: KEDAI KOPI MERDEKA" required>
+        </div>
+        <div class="form-group">
+          <label for="newOutletContact">Kontak / Lokasi</label>
+          <input type="text" id="newOutletContact" placeholder="Contoh: 0812-9988-7766 / Jl. Sudirman" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Outlet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 5: Tambah Produk Baru -->
+  <div id="modalNewProduct" class="modal-backdrop hidden">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h2 class="modal-title">Tambah Varian Produk Baru</h2>
+        <button class="btn-icon-sm modal-close-btn">&times;</button>
+      </div>
+      <form id="formNewProduct" class="modal-form">
+        <div class="form-group">
+          <label for="newProductName">Nama Varian Pudding</label>
+          <input type="text" id="newProductName" placeholder="Contoh: Pudding Mangga" required>
+        </div>
+        <div class="form-group">
+          <label for="newProductPrice">Harga Satuan per Cup (Rp)</label>
+          <input type="number" id="newProductPrice" min="1000" step="500" value="5000" required>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary modal-close-btn">Batal</button>
+          <button type="submit" class="btn btn-primary">Simpan Varian</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Floating WA-Style AI Assistant (Bottom-Right) -->
+  <div class="ai-chat-floating">
+    <div id="aiChatPanel" class="ai-chat-panel hidden" role="dialog" aria-label="Asisten AI Melpud">
+      <div class="ai-chat-header">
+        <div class="ai-chat-header-info">
+          <div class="ai-chat-avatar" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+          </div>
+          <div>
+            <h2 class="ai-chat-title">Asisten AI Melpud</h2>
+            <span class="ai-chat-status">Catat transaksi, lunasi, & cek info outlet</span>
+          </div>
+        </div>
+        <button id="aiChatCloseBtn" class="btn-icon-sm ai-chat-close" aria-label="Tutup Chat">&times;</button>
+      </div>
+      <div id="aiChatMessages" class="ai-chat-messages"></div>
+      <div class="ai-chat-input-bar">
+        <input type="text" id="aiQuickInput" class="ai-chat-input" placeholder="Tulis perintah ke asisten..." autocomplete="off">
+        <button id="aiSubmitBtn" class="btn btn-primary ai-chat-send" aria-label="Kirim Perintah">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        </button>
+      </div>
+    </div>
+    <button id="aiFabBtn" class="ai-fab-btn" aria-label="Buka Asisten AI" title="Asisten AI Melpud">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+    </button>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastNotification" class="toast-notification hidden"></div>
+
+  <!-- Main Application Script -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
