@@ -122,7 +122,7 @@ class MelpudStore {
   async settleOutlet(outletId) {
     const today = todayISO();
     const targets = this.batches.filter(
-      b => b.outletId === outletId && b.paymentStatus === 'UNPAID' && b.status === 'RECONCILED'
+      b => (outletId === 'ALL' || b.outletId === outletId) && b.paymentStatus === 'UNPAID' && b.status === 'RECONCILED'
     );
     targets.forEach(b => {
       b.paymentStatus = 'PAID';
@@ -131,6 +131,28 @@ class MelpudStore {
     await this.repo.settleBatches(targets.map(b => b.id), today, this.snapshot());
     await this.refreshSummary();
     return targets.length;
+  }
+
+  async batchReconcileMulti(operations) {
+    const applied = [];
+    for (const op of operations) {
+      const b = this.batches.find(x => x.id === op.id);
+      if (!b) continue;
+      b.qtyReturned = op.qtyReturned;
+      b.status = 'RECONCILED';
+      b.paymentStatus = op.paymentStatus;
+      b.paidAt = op.paidAt;
+      applied.push(b);
+    }
+    const saved = await this.repo.batchReconcileMulti(operations, this.snapshot());
+    if (Array.isArray(saved)) {
+      saved.forEach(row => {
+        const idx = this.batches.findIndex(x => x.id === row.id);
+        if (idx !== -1) this.batches[idx] = row;
+      });
+    }
+    await this.refreshSummary();
+    return applied.length;
   }
 
   async settleBatch(batchId) {
@@ -1043,10 +1065,12 @@ function initAiChatWidget() {
     appendMessage('bot', `
       <strong>Perintah Asisten AI Melpud:</strong>
       <ol class="chat-cmd-list">
+        <li><strong>Ambil massal / kecuali:</strong> "semua outlet tgl 10 sudah diambil tapi belom dibayar" / "semua outlet tidak ada return kecuali p bungin"</li>
+        <li><strong>Multi-outlet return &amp; bayar:</strong> "p bungin sudah bayar dan return 2, dan skensa mami return 1 belom bayar"</li>
         <li><strong>Lunas semua outlet:</strong> "di outlet p bungin lunas semua"</li>
-        <li><strong>Cek hutang &amp; bawaan:</strong> "info p bungin bawa berapa hari ini" atau "tgl 9"</li>
-        <li><strong>Catat pengeluaran:</strong> "saya keluarin uang 50rb hari ini untuk belanja gula total 50rb"</li>
-        <li><strong>Drop &amp; Retur:</strong> "taruh di p bungin 10 cup coklat" / "di p bungin sisa 2"</li>
+        <li><strong>Info outlet &amp; daftar belanja:</strong> "info p bungin bawa berapa hari ini" / "daftar belanja hari ini dan tgl 9 berapa"</li>
+        <li><strong>Daftar laporan:</strong> "berikan daftar laporan minggu ini dan hari ini"</li>
+        <li><strong>Catat pengeluaran &amp; drop:</strong> "keluarin uang 50rb hari ini belanja gula total 50rb" / "taruh di p bungin 10 cup"</li>
       </ol>
     `);
   }
@@ -1103,6 +1127,71 @@ function initAiChatWidget() {
     `;
   }
 
+  function buildExpensesReply(data) {
+    let grandTotal = 0;
+    const sections = data.dates.map(d => {
+      const rows = store.expenses.filter(e => e.date === d.date);
+      const sub = rows.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+      grandTotal += sub;
+      if (rows.length === 0) {
+        return `<strong>${escapeHtml(d.label)} (${shortDate(d.date)}):</strong> Belum ada belanja tercatat (Rp 0)`;
+      }
+      const itemsHtml = rows.map(e =>
+        `• ${escapeHtml(e.description)} (${escapeHtml(e.category)}): <strong>${formatRupiah(e.amount)}</strong>`
+      ).join('<br>');
+      return `<strong>${escapeHtml(d.label)} (${shortDate(d.date)}) — Total ${formatRupiah(sub)}:</strong><br>${itemsHtml}`;
+    }).join('<br><br>');
+
+    const totalLine = data.dates.length > 1 ? `<br><br><strong>Total Gabungan: ${formatRupiah(grandTotal)}</strong>` : '';
+    return `<strong>Daftar Belanja &amp; Pengeluaran</strong><br>${sections}${totalLine}`;
+  }
+
+  function buildReportReply(data) {
+    const today = todayISO();
+    const blocks = [];
+
+    if (data.scope === 'week' || data.scope === 'both' || data.scope === 'month') {
+      const periodKey = data.scope === 'month' ? 'month' : 'week';
+      const rep = filterRecordsByPeriod(store.batches, store.expenses, periodKey, today.slice(0, 7), today);
+      const sum = calculateFinancialSummary(rep.batches, rep.expenses);
+      const txLines = [
+        ...rep.batches.map(b => {
+          const o = store.outlets.find(x => x.id === b.outletId);
+          return `• [${shortDate(b.date)}] ${escapeHtml(o ? o.name : b.outletId)}: titip ${b.qtyDrop}${b.qtyReturned !== null ? `, sisa ${b.qtyReturned}` : ''} (${b.status === 'ACTIVE' ? 'ACTIVE' : b.paymentStatus})`;
+        }),
+        ...rep.expenses.map(e => `• [${shortDate(e.date)}] Belanja ${escapeHtml(e.description)}: -${formatRupiah(e.amount)}`)
+      ];
+      blocks.push(`
+        <strong>Laporan ${escapeHtml(rep.periodLabel)}</strong><br>
+        • Kas Masuk (PAID): <strong>${formatRupiah(sum.realCashIn)}</strong><br>
+        • Belanja Bahan: <strong>${formatRupiah(sum.totalExpenses)}</strong><br>
+        • Piutang (UNPAID): <strong>${formatRupiah(sum.totalReceivables)}</strong><br>
+        • Laba Bersih Kas: <strong>${formatRupiah(sum.netCash)}</strong><br>
+        ${txLines.length > 0 ? txLines.slice(0, 8).join('<br>') : 'Belum ada transaksi pada periode ini.'}
+      `);
+    }
+
+    if (data.scope === 'day' || data.scope === 'both') {
+      const dayBatches = store.batches.filter(b => b.date === today || b.paidAt === today);
+      const dayExpenses = store.expenses.filter(e => e.date === today);
+      const sum = calculateFinancialSummary(dayBatches, dayExpenses);
+      const dayLines = [
+        ...dayBatches.map(b => {
+          const o = store.outlets.find(x => x.id === b.outletId);
+          return `• ${escapeHtml(o ? o.name : b.outletId)}: titip ${b.qtyDrop}${b.qtyReturned !== null ? `, sisa ${b.qtyReturned}` : ''} (${b.status === 'ACTIVE' ? 'ACTIVE' : b.paymentStatus})`;
+        }),
+        ...dayExpenses.map(e => `• Belanja ${escapeHtml(e.description)}: -${formatRupiah(e.amount)}`)
+      ];
+      blocks.push(`
+        <strong>Laporan Hari Ini (${shortDate(today)})</strong><br>
+        • Kas Masuk: <strong>${formatRupiah(sum.realCashIn)}</strong> | Belanja: <strong>${formatRupiah(sum.totalExpenses)}</strong> | Piutang: <strong>${formatRupiah(sum.totalReceivables)}</strong><br>
+        ${dayLines.length > 0 ? dayLines.join('<br>') : 'Belum ada transaksi tercatat hari ini.'}
+      `);
+    }
+
+    return blocks.join('<br><br>');
+  }
+
   function handleSend() {
     const raw = input.value.trim();
     if (!raw) return;
@@ -1111,7 +1200,7 @@ function initAiChatWidget() {
 
     const parsed = parseNLPCommand(raw, store.outlets, store.products, store.batches, todayISO());
     if (!parsed) {
-      appendMessage('bot', 'Maaf, perintah belum dikenali. Coba: <em>"info p bungin bawa berapa hari ini"</em>, <em>"di outlet p bungin lunas semua"</em>, atau <em>"keluarin uang 50rb hari ini buat beli susu"</em>.');
+      appendMessage('bot', 'Maaf, perintah belum dikenali. Buka daftar perintah di atas atau tulis misalnya: <em>"daftar belanja hari ini"</em>, <em>"berikan daftar laporan minggu ini"</em>, atau <em>"semua outlet tidak ada return kecuali p bungin"</em>.');
       return;
     }
 
@@ -1122,6 +1211,16 @@ function initAiChatWidget() {
 
     if (parsed.action === 'QUERY_OUTLET_INFO') {
       appendMessage('bot', buildOutletInfoReply(parsed.data));
+      return;
+    }
+
+    if (parsed.action === 'QUERY_EXPENSES') {
+      appendMessage('bot', buildExpensesReply(parsed.data));
+      return;
+    }
+
+    if (parsed.action === 'QUERY_REPORT') {
+      appendMessage('bot', buildReportReply(parsed.data));
       return;
     }
 
@@ -1164,6 +1263,25 @@ function initAiChatWidget() {
           if (!b) throw new Error(`Belum ada batch aktif di ${data.outletName}.`);
           await store.reconcileBatch(b.id, data.qtyReturned, data.paymentStatus);
           box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Rekonsiliasi ${escapeHtml(data.outletName)} tersimpan.</span>`;
+        } else if (parsed.action === 'BATCH_RECONCILE_MULTI') {
+          const today = todayISO();
+          const ops = data.items.map(item => {
+            const target = item.batchId
+              ? store.batches.find(x => x.id === item.batchId)
+              : (store.batches.find(x => x.outletId === item.outletId && x.status === 'ACTIVE')
+                || store.batches.find(x => x.outletId === item.outletId && x.paymentStatus === 'UNPAID'));
+            if (!target) {
+              throw new Error(`Tidak ada batch aktif/unpaid di ${item.outletName}.`);
+            }
+            return {
+              id: target.id,
+              qtyReturned: Math.min(target.qtyDrop, Math.max(0, item.qtyReturned)),
+              paymentStatus: item.paymentStatus,
+              paidAt: item.paymentStatus === 'PAID' ? today : null
+            };
+          });
+          const count = await store.batchReconcileMulti(ops);
+          box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Berhasil memperbarui ${count} transaksi outlet.</span>`;
         } else if (parsed.action === 'SETTLE_PAYMENT') {
           const settled = await store.settleOutlet(data.outletId);
           box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Selesai! ${settled} tagihan ${escapeHtml(data.outletName)} dilunasi.</span>`;

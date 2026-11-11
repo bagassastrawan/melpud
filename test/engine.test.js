@@ -218,3 +218,58 @@ test('AI Chatbot Commands: Bulk Settle, Outlet Info/Date Query, & Natural Expens
   assert.equal(expPcs.data.amount, 25000);
   assert.match(expPcs.data.description, /50pcs/i);
 });
+
+test('AI Chatbot Commands (Batch 2): 6 Multi-Outlet, Expense List, & Report Commands', () => {
+  const activeBatches = [
+    { id: 'a1', date: '2026-11-10', outletId: 'p-bungin', qtyDrop: 10, qtyReturned: null, priceUnit: 5000, status: 'ACTIVE', paymentStatus: 'UNPAID' },
+    { id: 'a2', date: '2026-11-10', outletId: 'p-singkep', qtyDrop: 12, qtyReturned: null, priceUnit: 5000, status: 'ACTIVE', paymentStatus: 'UNPAID' },
+    { id: 'a3', date: '2026-11-10', outletId: 'skensa-mami', qtyDrop: 8, qtyReturned: null, priceUnit: 5000, status: 'ACTIVE', paymentStatus: 'UNPAID' }
+  ];
+
+  // 1. semua outlet tanggal sekian sudah diambil tapi belom dibayar
+  const cmd1 = parseNLPCommand('semua outlet tanggal 10 nov sudah diambil tapi belom dibayar', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd1.action, 'BATCH_RECONCILE_MULTI');
+  assert.equal(cmd1.data.items.length, 3);
+  assert.ok(cmd1.data.items.every(i => i.qtyReturned === 0 && i.paymentStatus === 'UNPAID'));
+
+  // 2. daftar belanja hari ini dan tanggal ini berapa
+  const cmd2 = parseNLPCommand('daftar belanja hari ini dan tanggal 9 nov berapa', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd2.action, 'QUERY_EXPENSES');
+  assert.deepEqual(cmd2.data.dates.map(d => d.date), ['2026-11-11', '2026-11-09']);
+
+  // 3. berikan daftar laporan minggu ini, nanti akan ada laporan untuk hari ini
+  const cmd3 = parseNLPCommand('berikan daftar laporan minggu ini, nanti akan ada laporan untuk hari ini', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd3.action, 'QUERY_REPORT');
+  assert.equal(cmd3.data.scope, 'both');
+
+  // 4A. semua outlet tidak ada return kecuali outlet X
+  const cmd4a = parseNLPCommand('semua outlet tidak ada return kecuali p bungin', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd4a.action, 'BATCH_RECONCILE_MULTI');
+  assert.deepEqual(cmd4a.data.items.map(i => i.outletId), ['p-singkep', 'skensa-mami']);
+  assert.ok(cmd4a.data.items.every(i => i.qtyReturned === 0 && i.paymentStatus === 'UNPAID'));
+
+  // 4B. semua outlet return [N] dan belom dibayar vs tanpa angka -> prompt
+  const cmd4b = parseNLPCommand('semua outlet return 2 dan belom dibayar', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd4b.action, 'BATCH_RECONCILE_MULTI');
+  assert.equal(cmd4b.data.items.length, 3);
+  assert.ok(cmd4b.data.items.every(i => i.qtyReturned === 2 && i.paymentStatus === 'UNPAID'));
+
+  const cmd4bAsk = parseNLPCommand('semua outlet return dan belom dibayar', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd4bAsk.action, 'PROMPT_CLARIFY');
+
+  // 5. semua outlet belom membayar, dan outlet ini sisa sekian dan outlet ini sisa sekian
+  const cmd5 = parseNLPCommand('semua outlet belom membayar, dan p bungin sisa 2 dan skensa mami sisa 1', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd5.action, 'BATCH_RECONCILE_MULTI');
+  assert.deepEqual(cmd5.data.items, [
+    { outletId: 'p-bungin', outletName: 'P. BUNGIN', qtyReturned: 2, paymentStatus: 'UNPAID' },
+    { outletId: 'skensa-mami', outletName: 'SKENSA MAMI', qtyReturned: 1, paymentStatus: 'UNPAID' }
+  ]);
+
+  // 6. outlet ini sudah bayar dan return sekian, dan outlet ini return sekian belom bayar
+  const cmd6 = parseNLPCommand('p bungin sudah bayar dan return 2, dan skensa mami return 1 belom bayar', INITIAL_OUTLETS, INITIAL_PRODUCTS, activeBatches, '2026-11-11');
+  assert.equal(cmd6.action, 'BATCH_RECONCILE_MULTI');
+  assert.deepEqual(cmd6.data.items, [
+    { outletId: 'p-bungin', outletName: 'P. BUNGIN', qtyReturned: 2, paymentStatus: 'PAID' },
+    { outletId: 'skensa-mami', outletName: 'SKENSA MAMI', qtyReturned: 1, paymentStatus: 'UNPAID' }
+  ]);
+});

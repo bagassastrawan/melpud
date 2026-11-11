@@ -95,6 +95,39 @@ export function matchOutlet(text, outlets) {
 }
 
 /**
+ * Temukan seluruh kemunculan outlet dalam kalimat beserta posisi karakter (terurut kemunculan).
+ */
+export function findAllOutletMatches(text, outlets) {
+  if (!text || !Array.isArray(outlets)) return [];
+  const lower = text.toLowerCase();
+  const found = [];
+
+  for (const outlet of outlets) {
+    const words = outlet.name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const patterns = [];
+    if (words.length > 0) {
+      patterns.push(words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(?:\\.|\\s)*'));
+    }
+    words.filter(w => w.length >= 4).forEach(w => {
+      patterns.push(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    });
+
+    let bestMatch = null;
+    for (const pat of patterns) {
+      const re = new RegExp(`\\b${pat}\\b`, 'gi');
+      const m = re.exec(lower);
+      if (m) {
+        if (!bestMatch || m.index < bestMatch.index || (m.index === bestMatch.index && m[0].length > bestMatch.length)) {
+          bestMatch = { outlet, index: m.index, length: m[0].length };
+        }
+      }
+    }
+    if (bestMatch) found.push(bestMatch);
+  }
+
+  return found.sort((a, b) => a.index - b.index);
+}
+/**
  * Match product by loose text
  */
 export function matchProduct(text, products) {
@@ -159,31 +192,34 @@ export function categorizeExpense(desc) {
 }
 
 /**
- * Ekstrak tanggal dari kalimat (mendukung "hari ini", "kemarin", "tanggal X", "9 nov", "YYYY-MM-DD").
+ * Ekstrak seluruh tanggal yang disebut dalam kalimat (mendukung "hari ini dan tanggal 9 nov").
  */
-export function extractDateFromText(text, refDateStr = new Date().toISOString().slice(0, 10)) {
+export function extractDatesFromText(text, refDateStr = new Date().toISOString().slice(0, 10)) {
   const lower = (text || '').toLowerCase();
   const [refYear, refMonth] = refDateStr.split('-');
+  const hits = [];
 
-  if (/\b(?:di\s*hari\s*ini|hari\s*ini|hr\s*ini|sekarang)\b/i.test(lower)) {
-    return { date: refDateStr, label: 'Hari ini', explicit: true };
-  }
-  if (/\bkemarin\b/i.test(lower)) {
-    const yMs = Date.parse(refDateStr + 'T00:00:00Z') - 86400000;
-    const yStr = new Date(yMs).toISOString().slice(0, 10);
-    return { date: yStr, label: 'Kemarin', explicit: true };
+  const addHit = (index, date, label) => {
+    hits.push({ index, date, label, explicit: true });
+  };
+
+  const todayRe = /\b(?:di\s*hari\s*ini|hari\s*ini|hr\s*ini|sekarang)\b/gi;
+  for (const m of lower.matchAll(todayRe)) addHit(m.index, refDateStr, 'Hari ini');
+
+  const yestRe = /\bkemarin\b/gi;
+  for (const m of lower.matchAll(yestRe)) {
+    const yStr = new Date(Date.parse(refDateStr + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+    addHit(m.index, yStr, 'Kemarin');
   }
 
-  const isoMatch = lower.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-  if (isoMatch) {
-    return { date: isoMatch[1], label: isoMatch[1], explicit: true };
+  for (const m of lower.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)) {
+    addHit(m.index, m[1], m[1]);
   }
 
-  const dmyMatch = lower.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/);
-  if (dmyMatch) {
-    const dd = dmyMatch[1].padStart(2, '0');
-    const mm = dmyMatch[2].padStart(2, '0');
-    return { date: `${dmyMatch[3]}-${mm}-${dd}`, label: `${dd}/${mm}/${dmyMatch[3]}`, explicit: true };
+  for (const m of lower.matchAll(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/g)) {
+    const dd = m[1].padStart(2, '0');
+    const mm = m[2].padStart(2, '0');
+    addHit(m.index, `${m[3]}-${mm}-${dd}`, `${dd}/${mm}/${m[3]}`);
   }
 
   const monthMap = {
@@ -192,50 +228,252 @@ export function extractDateFromText(text, refDateStr = new Date().toISOString().
     agu: '08', agt: '08', agustus: '08', sep: '09', sept: '09', september: '09',
     okt: '10', oktober: '10', nov: '11', november: '11', des: '12', desember: '12'
   };
-  const monthTextMatch = lower.match(/\b(\d{1,2})\s+(januari|jan|februari|feb|maret|mar|april|apr|mei|juni|jun|juli|jul|agustus|agu|agt|september|sept|sep|oktober|okt|november|nov|desember|des)\b/i);
-  if (monthTextMatch) {
-    const dd = monthTextMatch[1].padStart(2, '0');
-    const mm = monthMap[monthTextMatch[2].toLowerCase()];
-    return { date: `${refYear}-${mm}-${dd}`, label: `${monthTextMatch[1]} ${monthTextMatch[2]}`, explicit: true };
+  const monthTextRe = /\b(\d{1,2})\s+(januari|jan|februari|feb|maret|mar|april|apr|mei|juni|jun|juli|jul|agustus|agu|agt|september|sept|sep|oktober|okt|november|nov|desember|des)\b/gi;
+  for (const m of lower.matchAll(monthTextRe)) {
+    const dd = m[1].padStart(2, '0');
+    const mm = monthMap[m[2].toLowerCase()];
+    addHit(m.index, `${refYear}-${mm}-${dd}`, `${m[1]} ${m[2]}`);
   }
 
-  const tglMatch = lower.match(/\b(?:tanggal|tgl)\s*(\d{1,2})\b/i);
-  if (tglMatch) {
-    const dd = tglMatch[1].padStart(2, '0');
-    return { date: `${refYear}-${refMonth}-${dd}`, label: `Tgl ${tglMatch[1]}`, explicit: true };
+  for (const m of lower.matchAll(/\b(?:tanggal|tgl)\s*(\d{1,2})\b/gi)) {
+    const dd = m[1].padStart(2, '0');
+    const dateStr = `${refYear}-${refMonth}-${dd}`;
+    if (!hits.some(h => Math.abs(h.index - m.index) <= 12 && h.date === dateStr)) {
+      addHit(m.index, dateStr, `Tgl ${m[1]}`);
+    }
   }
 
-  return { date: refDateStr, label: 'Hari ini', explicit: false };
+  hits.sort((a, b) => a.index - b.index);
+  const seen = new Set();
+  return hits.filter(h => {
+    if (seen.has(h.date)) return false;
+    seen.add(h.date);
+    return true;
+  });
+}
+
+/**
+ * Ekstrak tanggal utama dari kalimat.
+ */
+export function extractDateFromText(text, refDateStr = new Date().toISOString().slice(0, 10)) {
+  const hits = extractDatesFromText(text, refDateStr);
+  return hits[0] || { date: refDateStr, label: 'Hari ini', explicit: false };
+}
+
+function detectPayStatus(segment, fallback = 'UNPAID') {
+  if (/\b(?:belom|belum)\s*(?:di)?bayar|belom\s*membayar|belum\s*membayar|unpaid|piutang\b/i.test(segment)) {
+    return 'UNPAID';
+  }
+  if (/\b(?:sudah\s*(?:di)?bayar|lunas|paid|cash|tunai)\b/i.test(segment)) {
+    return 'PAID';
+  }
+  return fallback;
+}
+
+function extractReturnQty(segment) {
+  if (/tidak\s*ada\s*(?:returns?|retur|sisa)|tanpa\s*(?:returns?|retur|sisa)|habis\s*semua/i.test(segment)) {
+    return 0;
+  }
+  const m = segment.match(/(?:sisa|returns?|retur|kembali)\s*(\d+)/i)
+    || segment.match(/(\d+)\s*(?:cup|pcs)?\s*(?:sisa|returns?|retur)/i);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 /**
  * AI Smart Quick-Log NLP Parser (Natural Language Processing for Indonesian field input)
- * Mendukung: CREATE_DROP, RECONCILE_BATCH, SETTLE_PAYMENT, RECORD_EXPENSE, & QUERY_OUTLET_INFO.
  */
 export function parseNLPCommand(rawText, outlets, products, activeBatches = [], refDateStr = new Date().toISOString().slice(0, 10)) {
   if (!rawText || typeof rawText !== 'string') return null;
   const text = rawText.trim();
   const lower = text.toLowerCase();
   const dateInfo = extractDateFromText(text, refDateStr);
+  const allDates = extractDatesFromText(text, refDateStr);
+  const outletMatches = findAllOutletMatches(text, outlets);
 
-  // 1. RECONCILE_BATCH check: "sisa", "retur", "kembali" (must precede pure SETTLE_PAYMENT)
-  if (lower.includes('sisa') || lower.includes('retur') || lower.includes('kembali')) {
+  // A. QUERY_REPORT: "berikan daftar laporan minggu ini / hari ini"
+  if (/\b(?:laporan|rekap)\b/i.test(lower) && !/\b(?:taruh|titip|drop|keluarin|belanja|beli)\b/i.test(lower)) {
+    const hasWeek = /\bminggu(?:an)?\b/i.test(lower);
+    const hasToday = /\b(?:hari\s*ini|hr\s*ini)\b/i.test(lower);
+    const hasMonth = /\bbulan(?:an)?\b/i.test(lower);
+    const scope = (hasWeek && hasToday) ? 'both' : (hasWeek ? 'week' : (hasToday ? 'day' : (hasMonth ? 'month' : 'week')));
+    return {
+      action: 'QUERY_REPORT',
+      confidence: 0.94,
+      title: 'Daftar Laporan Operasional',
+      summary: `Laporan periode ${scope === 'both' ? 'minggu ini & hari ini' : scope}`,
+      data: { scope, targetDate: dateInfo.date }
+    };
+  }
+
+  // B. QUERY_EXPENSES: "daftar belanja hari ini dan tanggal ini berapa"
+  if (
+    /\b(?:daftar|list|cek|lihat|riwayat|history)\s*(?:belanja|pengeluaran)\b/i.test(lower) ||
+    (/\b(?:belanja|pengeluaran)\b/i.test(lower) && /\b(?:berapa|mana|apa\s*saja)\b/i.test(lower))
+  ) {
+    const dates = allDates.length > 0 ? allDates : [{ date: refDateStr, label: 'Hari ini', explicit: false }];
+    return {
+      action: 'QUERY_EXPENSES',
+      confidence: 0.94,
+      title: 'Daftar Belanja & Pengeluaran',
+      summary: `Rincian belanja untuk ${dates.map(d => d.label).join(', ')}`,
+      data: { dates }
+    };
+  }
+
+  // C. Multi-Outlet / Bulk / Single Reconciliation (Commands 1, 4, 5, 6 + existing RECONCILE_BATCH)
+  const hasAllOutlets = /\bsemua\s*outlet\b/i.test(lower);
+  const hasReturnWord = /\b(?:sisa|returns?|retur|kembali)\b/i.test(lower);
+  const hasCollected = /\b(?:sudah\s*diambil|diambil)\b/i.test(lower);
+  const hasExcept = /\bkecuali\b/i.test(lower);
+  const isMultiOutletReconcile = outletMatches.length >= 2 && (hasReturnWord || /\b(?:bayar|lunas|unpaid|paid)\b/i.test(lower));
+  const isBulkAllOutlets = hasAllOutlets && (hasReturnWord || hasCollected || hasExcept || /\b(?:belom|belum)\s*(?:di)?bayar|belom\s*membayar|belum\s*membayar\b/i.test(lower));
+
+  if (isMultiOutletReconcile || isBulkAllOutlets) {
+    const prefix = outletMatches.length > 0 ? lower.slice(0, outletMatches[0].index) : lower;
+    const globalPay = detectPayStatus(prefix, detectPayStatus(lower, 'UNPAID'));
+    const items = [];
+
+    if (isMultiOutletReconcile && !hasExcept && !hasCollected && !/tidak\s*ada\s*(?:returns?|retur|sisa)/i.test(prefix)) {
+      // Per-outlet clauses (Commands 5 & 6)
+      for (let i = 0; i < outletMatches.length; i++) {
+        const m = outletMatches[i];
+        const nextIdx = i + 1 < outletMatches.length ? outletMatches[i + 1].index : lower.length;
+        const seg = lower.slice(m.index, nextIdx);
+        const qty = extractReturnQty(seg);
+        if (qty === null) {
+          return {
+            action: 'PROMPT_CLARIFY',
+            title: 'Lengkapi Jumlah Sisa / Return',
+            summary: `Sebutkan jumlah sisa/return untuk ${m.outlet.name} (contoh: "${m.outlet.name.toLowerCase()} sisa 2 belum bayar").`
+          };
+        }
+        items.push({
+          outletId: m.outlet.id,
+          outletName: m.outlet.name,
+          qtyReturned: qty,
+          paymentStatus: detectPayStatus(seg, globalPay)
+        });
+      }
+    } else if (hasExcept) {
+      // Command 4A: "semua outlet tidak ada return kecuali outlet X"
+      const exceptIdx = lower.indexOf('kecuali');
+      const excludedMap = new Map();
+      for (let i = 0; i < outletMatches.length; i++) {
+        const m = outletMatches[i];
+        if (m.index >= exceptIdx) {
+          const nextIdx = i + 1 < outletMatches.length ? outletMatches[i + 1].index : lower.length;
+          const seg = lower.slice(m.index, nextIdx);
+          excludedMap.set(m.outlet.id, {
+            qty: extractReturnQty(seg),
+            pay: detectPayStatus(seg, globalPay)
+          });
+        }
+      }
+
+      const activeTargets = activeBatches.filter(b => b.status === 'ACTIVE');
+      const seenOutlets = new Set();
+      for (const b of activeTargets) {
+        if (seenOutlets.has(b.outletId)) continue;
+        seenOutlets.add(b.outletId);
+        const outletObj = outlets.find(o => o.id === b.outletId);
+        const exc = excludedMap.get(b.outletId);
+        if (exc) {
+          if (exc.qty !== null) {
+            items.push({
+              batchId: b.id,
+              outletId: b.outletId,
+              outletName: outletObj ? outletObj.name : b.outletId,
+              qtyReturned: exc.qty,
+              paymentStatus: exc.pay
+            });
+          }
+          continue;
+        }
+        items.push({
+          batchId: b.id,
+          outletId: b.outletId,
+          outletName: outletObj ? outletObj.name : b.outletId,
+          qtyReturned: 0,
+          paymentStatus: globalPay
+        });
+      }
+    } else if (/tidak\s*ada\s*(?:returns?|retur|sisa)|tanpa\s*(?:returns?|retur|sisa)/i.test(lower) || hasCollected) {
+      // Command 1 & 4A without exception: "semua outlet tanggal sekian sudah diambil tapi belom dibayar"
+      const activeOnly = activeBatches.filter(b => b.status === 'ACTIVE');
+      const datedMatches = dateInfo.explicit ? activeOnly.filter(b => b.date === dateInfo.date) : activeOnly;
+      const targets = datedMatches.length > 0
+        ? datedMatches
+        : (dateInfo.explicit ? activeOnly.filter(b => b.date <= dateInfo.date) : activeOnly);
+
+      for (const b of targets) {
+        const outletObj = outlets.find(o => o.id === b.outletId);
+        items.push({
+          batchId: b.id,
+          outletId: b.outletId,
+          outletName: outletObj ? outletObj.name : b.outletId,
+          qtyReturned: 0,
+          paymentStatus: globalPay,
+          date: b.date
+        });
+      }
+    } else {
+      // Command 4B: "semua outlet return [N] dan belom dibayar"
+      const globalQty = extractReturnQty(lower);
+      if (globalQty === null) {
+        return {
+          action: 'PROMPT_CLARIFY',
+          title: 'Sebutkan Jumlah Return',
+          summary: 'Tuliskan jumlah return masing-masing atau angka globalnya, misal: "semua outlet return 2 dan belom dibayar" atau "p bungin sisa 2, skensa mami sisa 1 belom bayar".'
+        };
+      }
+      const activeOnly = activeBatches.filter(b => b.status === 'ACTIVE');
+      for (const b of activeOnly) {
+        const outletObj = outlets.find(o => o.id === b.outletId);
+        items.push({
+          batchId: b.id,
+          outletId: b.outletId,
+          outletName: outletObj ? outletObj.name : b.outletId,
+          qtyReturned: globalQty,
+          paymentStatus: globalPay
+        });
+      }
+    }
+
+    if (items.length === 0) {
+      return {
+        action: 'PROMPT_CLARIFY',
+        title: 'Tidak Ada Batch Aktif',
+        summary: `Tidak ditemukan batch ACTIVE yang cocok untuk diproses (${dateInfo.label}).`
+      };
+    }
+
+    const lines = items.map(it => `${it.outletName}: sisa ${it.qtyReturned} (${it.paymentStatus})`).join('; ');
+    return {
+      action: 'BATCH_RECONCILE_MULTI',
+      confidence: 0.93,
+      title: `Update Massal ${items.length} Transaksi Outlet`,
+      summary: lines,
+      data: { items, targetDate: dateInfo.date }
+    };
+  }
+
+  // 1. Single-outlet RECONCILE_BATCH check: "sisa", "retur", "return", "kembali"
+  if (hasReturnWord) {
     const matched = matchOutlet(lower, outlets);
-    const sisaMatch = lower.match(/(?:sisa|retur|kembali)\s*(\d+)/i) || lower.match(/(\d+)\s*(?:cup|pcs)?\s*(?:sisa|retur)/i);
-    const qtyReturned = sisaMatch ? parseInt(sisaMatch[1], 10) : 0;
-    const isPaid = lower.includes('lunas') || lower.includes('sudah bayar') || lower.includes('cash') || lower.includes('tunai');
+    const qtyReturned = extractReturnQty(lower) ?? 0;
+    const paymentStatus = detectPayStatus(lower, 'UNPAID');
 
     if (matched) {
       return {
         action: 'RECONCILE_BATCH',
         confidence: 0.92,
         title: 'Rekonsiliasi & Retur Outlet',
-        summary: `Rekonsiliasi ${matched.name}: sisa ${qtyReturned} cup, status ${isPaid ? 'PAID (Lunas)' : 'UNPAID (Piutang)'}`,
+        summary: `Rekonsiliasi ${matched.name}: sisa ${qtyReturned} cup, status ${paymentStatus === 'PAID' ? 'PAID (Lunas)' : 'UNPAID (Piutang)'}`,
         data: {
           outletId: matched.id,
           outletName: matched.name,
           qtyReturned,
-          paymentStatus: isPaid ? 'PAID' : 'UNPAID'
+          paymentStatus
         }
       };
     }
@@ -243,6 +481,16 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
 
   // 2. SETTLE_PAYMENT check: "lunas", "lunasi", "sudah bayar", "transfer masuk"
   if (lower.includes('lunas') || lower.includes('sudah bayar') || lower.includes('transfer masuk')) {
+    if (hasAllOutlets) {
+      const unpaidCount = activeBatches.filter(b => b.status === 'RECONCILED' && b.paymentStatus === 'UNPAID').length;
+      return {
+        action: 'SETTLE_PAYMENT',
+        confidence: 0.94,
+        title: 'Lunasi Semua Hutang Seluruh Outlet',
+        summary: `Lunasi seluruh tagihan UNPAID di semua outlet (${unpaidCount} nota belum terbayar)`,
+        data: { outletId: 'ALL', outletName: 'Semua Outlet', unpaidCount }
+      };
+    }
     const matched = matchOutlet(lower, outlets);
     if (matched) {
       const billing = getOutletBillingStatus(matched.id, activeBatches, refDateStr);
@@ -269,7 +517,7 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
     };
   }
 
-  // 3. RECORD_EXPENSE check: "keluarin", "pengeluaran", "belanja", "beli", "biaya", "bensin", "habis"
+  // 3. RECORD_EXPENSE check
   if (
     lower.includes('keluarin') || lower.includes('mengeluarkan') || lower.includes('pengeluaran') ||
     lower.includes('keluar uang') || lower.includes('belanja') || lower.includes('beli') ||
@@ -309,7 +557,7 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
     };
   }
 
-  // 4. CREATE_DROP check: "taruh", "titip", "drop", "antar", "kirim"
+  // 4. CREATE_DROP check
   if (lower.includes('taruh') || lower.includes('titip') || lower.includes('drop') || lower.includes('antar') || lower.includes('kirim')) {
     const matched = matchOutlet(lower, outlets);
     const matchedProduct = matchProduct(lower, products);
@@ -334,7 +582,7 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
     }
   }
 
-  // 5. QUERY_OUTLET_INFO check: info hutang outlet, bawa berapa tanggal X / hari ini
+  // 5. QUERY_OUTLET_INFO check
   if (
     lower.includes('info') || lower.includes('informasi') || lower.includes('cek') ||
     lower.includes('berapa') || lower.includes('hutang') || lower.includes('piutang') ||

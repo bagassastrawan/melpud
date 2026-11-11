@@ -233,6 +233,32 @@ export class MelpudRepository {
     saveLocal(stateSnapshot);
     return null;
   }
+  async batchReconcileMulti(updates, stateSnapshot) {
+    if (updates.length === 0) return [];
+    if (this.mode === 'supabase') {
+      const supabase = await getClient();
+      const results = await Promise.all(
+        updates.map(u =>
+          supabase
+            .from('consignment_batches')
+            .update({
+              qty_returned: u.qtyReturned,
+              status: 'RECONCILED',
+              payment_status: u.paymentStatus,
+              paid_at: u.paidAt
+            })
+            .eq('id', u.id)
+            .select()
+            .single()
+        )
+      );
+      const errRes = results.find(r => r.error);
+      if (errRes) throw new Error(errRes.error.message);
+      return results.map(r => mapBatchFromDb(r.data));
+    }
+    saveLocal(stateSnapshot);
+    return null;
+  }
 
   async updateBatch(batch, stateSnapshot) {
     if (this.mode === 'supabase') {
