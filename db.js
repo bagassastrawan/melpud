@@ -213,6 +213,21 @@ export class MelpudRepository {
     return batch;
   }
 
+  async batchCreateDrops(batches, stateSnapshot) {
+    if (batches.length === 0) return [];
+    if (this.mode === 'supabase') {
+      const supabase = await getClient();
+      const { data, error } = await supabase
+        .from('consignment_batches')
+        .insert(batches.map(mapBatchToDb))
+        .select();
+      if (error) throw new Error(error.message);
+      return (data || []).map(mapBatchFromDb);
+    }
+    saveLocal(stateSnapshot);
+    return batches;
+  }
+
   async reconcileBatch(batchId, qtyReturned, paymentStatus, paidAt, stateSnapshot) {
     if (this.mode === 'supabase') {
       const supabase = await getClient();

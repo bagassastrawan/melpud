@@ -269,16 +269,28 @@ function detectPayStatus(segment, fallback = 'UNPAID') {
   }
   return fallback;
 }
-
-function extractReturnQty(segment) {
-  if (/tidak\s*ada\s*(?:returns?|retur|sisa)|tanpa\s*(?:returns?|retur|sisa)|habis\s*semua/i.test(segment)) {
-    return 0;
-  }
-  const m = segment.match(/(?:sisa|returns?|retur|kembali)\s*(\d+)/i)
-    || segment.match(/(\d+)\s*(?:cup|pcs)?\s*(?:sisa|returns?|retur)/i);
-  return m ? parseInt(m[1], 10) : null;
+function stripDateTokens(segment) {
+  return (segment || '')
+    .replace(/\b\d{4}-\d{2}-\d{2}\b/g, ' ')
+    .replace(/\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}\b/g, ' ')
+    .replace(/\b\d{1,2}\s+(?:januari|jan|februari|feb|maret|mar|april|apr|mei|juni|jun|juli|jul|agustus|agu|agt|september|sept|sep|oktober|okt|november|nov|desember|des)\b/gi, ' ')
+    .replace(/\b(?:tanggal|tgl)\s*\d{1,2}\b/gi, ' ');
 }
 
+function extractReturnQty(segment, allowBareNumber = false) {
+  const cleanSeg = stripDateTokens(segment);
+  if (/tidak\s*ada\s*(?:returns?|retur|sisa)|tanpa\s*(?:returns?|retur|sisa)|habis\s*semua/i.test(cleanSeg)) {
+    return 0;
+  }
+  const m = cleanSeg.match(/(?:sisa|returns?|retur|kembali)\s*(\d+)/i)
+    || cleanSeg.match(/(\d+)\s*(?:cup|pcs)?\s*(?:sisa|returns?|retur)/i);
+  if (m) return parseInt(m[1], 10);
+  if (allowBareNumber) {
+    const bare = cleanSeg.match(/\b(\d+)\b/);
+    if (bare) return parseInt(bare[1], 10);
+  }
+  return null;
+}
 /**
  * AI Smart Quick-Log NLP Parser (Natural Language Processing for Indonesian field input)
  */
@@ -334,12 +346,12 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
     const items = [];
 
     if (isMultiOutletReconcile && !hasExcept && !hasCollected && !/tidak\s*ada\s*(?:returns?|retur|sisa)/i.test(prefix)) {
-      // Per-outlet clauses (Commands 5 & 6)
+      // Per-outlet clauses (Commands 5, 6, & multi-outlet return confirmation)
       for (let i = 0; i < outletMatches.length; i++) {
         const m = outletMatches[i];
         const nextIdx = i + 1 < outletMatches.length ? outletMatches[i + 1].index : lower.length;
-        const seg = lower.slice(m.index, nextIdx);
-        const qty = extractReturnQty(seg);
+        const segAfterOutlet = lower.slice(m.index + m.length, nextIdx);
+        const qty = extractReturnQty(segAfterOutlet, hasReturnWord);
         if (qty === null) {
           return {
             action: 'PROMPT_CLARIFY',
@@ -351,7 +363,7 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
           outletId: m.outlet.id,
           outletName: m.outlet.name,
           qtyReturned: qty,
-          paymentStatus: detectPayStatus(seg, globalPay)
+          paymentStatus: detectPayStatus(segAfterOutlet, globalPay)
         });
       }
     } else if (hasExcept) {
@@ -557,13 +569,50 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
     };
   }
 
-  // 4. CREATE_DROP check
-  if (lower.includes('taruh') || lower.includes('titip') || lower.includes('drop') || lower.includes('antar') || lower.includes('kirim')) {
+  // 4. CREATE_DROP & BATCH_CREATE_DROP check ("taruh", "titip", "drop", "bawa <angka>", multi-outlet bawa)
+  const isQuestionWord = /\b(?:berapa|info|informasi|cek|tampilkan|lihat|mana|apa)\b/i.test(lower);
+  const hasDropVerb = /\b(?:taruh|titip|drop|antar|kirim|bawa)\b/i.test(lower);
+
+  if (!isQuestionWord && outletMatches.length >= 2 && (hasDropVerb || /\b\d+\b/.test(lower))) {
+    const items = [];
+    for (let i = 0; i < outletMatches.length; i++) {
+      const m = outletMatches[i];
+      const nextIdx = i + 1 < outletMatches.length ? outletMatches[i + 1].index : lower.length;
+      const segAfter = stripDateTokens(lower.slice(m.index + m.length, nextIdx));
+      const qtyMatch = segAfter.match(/(?:bawa|titip|taruh|drop|kirim)?\s*(\d+)\s*(?:cup|pcs|buah|porsi)?/i);
+      if (!qtyMatch) {
+        return {
+          action: 'PROMPT_CLARIFY',
+          title: 'Lengkapi Jumlah Cup',
+          summary: `Sebutkan jumlah cup yang dibawa untuk ${m.outlet.name} (contoh: "${m.outlet.name.toLowerCase()} bawa 10").`
+        };
+      }
+      const qtyDrop = parseInt(qtyMatch[1], 10);
+      const prod = matchProduct(segAfter, products);
+      items.push({
+        outletId: m.outlet.id,
+        outletName: m.outlet.name,
+        productId: prod.id,
+        productName: prod.name,
+        priceUnit: prod.price,
+        qtyDrop
+      });
+    }
+    return {
+      action: 'BATCH_CREATE_DROP',
+      confidence: 0.94,
+      title: `Catat Drop Massal (${items.length} Outlet)`,
+      summary: items.map(it => `${it.outletName}: ${it.qtyDrop} cup ${it.productName}`).join('; '),
+      data: { date: dateInfo.date, items }
+    };
+  }
+
+  if (!isQuestionWord && hasDropVerb) {
     const matched = matchOutlet(lower, outlets);
     const matchedProduct = matchProduct(lower, products);
-    const qtyMatch = lower.match(/(\d+)\s*(?:cup|pcs|buah|porsi)?/i);
+    const afterOutlet = stripDateTokens(outletMatches[0] ? lower.slice(outletMatches[0].index + outletMatches[0].length) : lower);
+    const qtyMatch = afterOutlet.match(/(\d+)\s*(?:cup|pcs|buah|porsi)?/i) || stripDateTokens(lower).match(/(\d+)\s*(?:cup|pcs|buah|porsi)?/i);
     const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 10;
-
     if (matched) {
       return {
         action: 'CREATE_DROP',
@@ -571,6 +620,7 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
         title: 'Catat Penitipan Pudding (Drop Batch)',
         summary: `Drop ${qty} cup ${matchedProduct.name} ke ${matched.name}`,
         data: {
+          date: dateInfo.date,
           outletId: matched.id,
           outletName: matched.name,
           productId: matchedProduct.id,
@@ -581,7 +631,6 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
       };
     }
   }
-
   // 5. QUERY_OUTLET_INFO check
   if (
     lower.includes('info') || lower.includes('informasi') || lower.includes('cek') ||
@@ -621,6 +670,105 @@ export function parseNLPCommand(rawText, outlets, products, activeBatches = [], 
   }
 
   return null;
+}
+
+/**
+ * Validasi integritas hasil parsing AI (lokal maupun Gemini) sebelum tampil di konfirmasi user.
+ * Mencegah angka salah (misal sisa retur > qty titip, nominal 0, atau outlet tak dikenal).
+ */
+export function validateParsedAction(parsed, outlets, products, activeBatches = []) {
+  if (!parsed || !parsed.action) {
+    return { ok: false, reason: 'Perintah tidak dapat dipahami.' };
+  }
+  if (parsed.action === 'PROMPT_CLARIFY' || parsed.action.startsWith('QUERY_')) {
+    return { ok: true, parsed };
+  }
+
+  const data = parsed.data || {};
+
+  if (parsed.action === 'CREATE_DROP') {
+    const outlet = outlets.find(o => o.id === data.outletId) || matchOutlet(data.outletName || '', outlets);
+    if (!outlet) return { ok: false, reason: `Outlet "${data.outletName || ''}" tidak ditemukan.` };
+    const qty = Number(data.qtyDrop);
+    if (!Number.isInteger(qty) || qty <= 0) return { ok: false, reason: 'Jumlah titip harus angka bulat > 0.' };
+    const prod = products.find(p => p.id === data.productId) || matchProduct(data.productName || '', products);
+    data.outletId = outlet.id;
+    data.outletName = outlet.name;
+    data.productId = prod.id;
+    data.productName = prod.name;
+    data.priceUnit = prod.price;
+    data.qtyDrop = qty;
+  }
+
+  if (parsed.action === 'BATCH_CREATE_DROP') {
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      return { ok: false, reason: 'Daftar drop outlet kosong.' };
+    }
+    for (const item of data.items) {
+      const outlet = outlets.find(o => o.id === item.outletId) || matchOutlet(item.outletName || '', outlets);
+      if (!outlet) return { ok: false, reason: `Outlet "${item.outletName || ''}" tidak terdaftar.` };
+      const qty = Number(item.qtyDrop);
+      if (!Number.isInteger(qty) || qty <= 0) return { ok: false, reason: `Jumlah cup di ${outlet.name} harus > 0.` };
+      const prod = products.find(p => p.id === item.productId) || matchProduct(item.productName || '', products);
+      item.outletId = outlet.id;
+      item.outletName = outlet.name;
+      item.productId = prod.id;
+      item.productName = prod.name;
+      item.priceUnit = prod.price;
+      item.qtyDrop = qty;
+    }
+  }
+
+  if (parsed.action === 'RECONCILE_BATCH') {
+    const outlet = outlets.find(o => o.id === data.outletId) || matchOutlet(data.outletName || '', outlets);
+    if (!outlet) return { ok: false, reason: 'Outlet tidak ditemukan.' };
+    const ret = Number(data.qtyReturned);
+    if (!Number.isInteger(ret) || ret < 0) return { ok: false, reason: 'Jumlah sisa retur harus >= 0.' };
+    const target = activeBatches.find(b => b.outletId === outlet.id && b.status === 'ACTIVE')
+      || activeBatches.find(b => b.outletId === outlet.id);
+    if (target && ret > target.qtyDrop) {
+      return { ok: false, reason: `Sisa retur (${ret} cup) di ${outlet.name} melebihi jumlah titip (${target.qtyDrop} cup).` };
+    }
+    data.outletId = outlet.id;
+    data.outletName = outlet.name;
+    data.qtyReturned = ret;
+  }
+
+  if (parsed.action === 'BATCH_RECONCILE_MULTI') {
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      return { ok: false, reason: 'Tidak ada outlet pada daftar rekonsiliasi.' };
+    }
+    for (const item of data.items) {
+      const outlet = outlets.find(o => o.id === item.outletId) || matchOutlet(item.outletName || '', outlets);
+      if (!outlet) return { ok: false, reason: `Outlet "${item.outletName || ''}" tidak terdaftar.` };
+      const ret = Number(item.qtyReturned);
+      if (!Number.isInteger(ret) || ret < 0) return { ok: false, reason: `Jumlah sisa di ${outlet.name} harus >= 0.` };
+      const target = item.batchId
+        ? activeBatches.find(b => b.id === item.batchId)
+        : (activeBatches.find(b => b.outletId === outlet.id && b.status === 'ACTIVE')
+          || activeBatches.find(b => b.outletId === outlet.id && b.paymentStatus === 'UNPAID'));
+      if (!target) {
+        return { ok: false, reason: `Tidak ada batch aktif/unpaid di ${outlet.name}.` };
+      }
+      if (ret > target.qtyDrop) {
+        return { ok: false, reason: `Sisa retur (${ret} cup) di ${outlet.name} melebihi jumlah titip (${target.qtyDrop} cup).` };
+      }
+      item.outletId = outlet.id;
+      item.outletName = outlet.name;
+      item.qtyReturned = ret;
+      item.paymentStatus = item.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID';
+    }
+  }
+
+  if (parsed.action === 'RECORD_EXPENSE') {
+    const amount = Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, reason: 'Nominal pengeluaran harus lebih besar dari Rp 0.' };
+    }
+    data.amount = Math.round(amount);
+  }
+
+  return { ok: true, parsed };
 }
 
 /**

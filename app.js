@@ -9,10 +9,33 @@ import {
   calculateFinancialSummary,
   formatRupiah,
   parseNLPCommand,
+  validateParsedAction,
   getOutletBillingStatus,
   filterRecordsByPeriod
 } from './core.js';
 import { MelpudRepository } from './db.js';
+
+const LEARNED_AI_KEY = 'melpud_ai_learned';
+
+function getLearnedExamples() {
+  try {
+    const raw = localStorage.getItem(LEARNED_AI_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLearnedExample(phrase, parsed) {
+  try {
+    const list = getLearnedExamples().filter(x => x.phrase !== phrase);
+    const cleanParsed = { action: parsed.action, title: parsed.title, summary: parsed.summary, data: parsed.data };
+    list.push({ phrase, parsed: cleanParsed });
+    localStorage.setItem(LEARNED_AI_KEY, JSON.stringify(list.slice(-20)));
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 function shortDate(iso) {
   if (!iso) return '-';
@@ -87,6 +110,34 @@ class MelpudStore {
     const saved = await this.repo.createBatch(newBatch, this.snapshot());
     if (saved) this.batches[0] = saved;
     await this.refreshSummary();
+  }
+
+  async batchCreateDrops(items, date) {
+    const dropDate = date || todayISO();
+    const baseTs = Date.now();
+    const newBatches = items.map((item, idx) => ({
+      id: `batch-${baseTs}-${idx}`,
+      date: dropDate,
+      outletId: item.outletId,
+      productId: item.productId,
+      productName: item.productName || 'Pudding Coklat',
+      qtyDrop: parseInt(item.qtyDrop, 10),
+      qtyReturned: null,
+      priceUnit: Number(item.priceUnit) || 5000,
+      status: 'ACTIVE',
+      paymentStatus: 'UNPAID',
+      paidAt: null
+    }));
+    this.batches = [...newBatches.slice().reverse(), ...this.batches];
+    const saved = await this.repo.batchCreateDrops(newBatches, this.snapshot());
+    if (Array.isArray(saved)) {
+      saved.forEach(row => {
+        const idx = this.batches.findIndex(x => x.id === row.id);
+        if (idx !== -1) this.batches[idx] = row;
+      });
+    }
+    await this.refreshSummary();
+    return newBatches.length;
   }
 
   async reconcileBatch(batchId, qtyReturned, paymentStatus) {
@@ -1065,12 +1116,12 @@ function initAiChatWidget() {
     appendMessage('bot', `
       <strong>Perintah Asisten AI Melpud:</strong>
       <ol class="chat-cmd-list">
-        <li><strong>Ambil massal / kecuali:</strong> "semua outlet tgl 10 sudah diambil tapi belom dibayar" / "semua outlet tidak ada return kecuali p bungin"</li>
-        <li><strong>Multi-outlet return &amp; bayar:</strong> "p bungin sudah bayar dan return 2, dan skensa mami return 1 belom bayar"</li>
+        <li><strong>Drop banyak outlet:</strong> "p bungin bawa 10, p moyo bawa 12, p singkep bawa 15, bubuh bali bawa 10, skensa mami bawa 8"</li>
+        <li><strong>Konfirmasi return massal:</strong> "konfirmasi return: p bungin sisa 2, p moyo 1, p singkep 3, bubuh bali 0, skensa mami 2"</li>
+        <li><strong>Ambil / kecuali / campuran:</strong> "semua outlet tgl 10 sudah diambil tapi belom dibayar" / "semua outlet tidak ada return kecuali p bungin"</li>
         <li><strong>Lunas semua outlet:</strong> "di outlet p bungin lunas semua"</li>
-        <li><strong>Info outlet &amp; daftar belanja:</strong> "info p bungin bawa berapa hari ini" / "daftar belanja hari ini dan tgl 9 berapa"</li>
-        <li><strong>Daftar laporan:</strong> "berikan daftar laporan minggu ini dan hari ini"</li>
-        <li><strong>Catat pengeluaran &amp; drop:</strong> "keluarin uang 50rb hari ini belanja gula total 50rb" / "taruh di p bungin 10 cup"</li>
+        <li><strong>Info &amp; daftar belanja:</strong> "info p bungin bawa berapa hari ini" / "daftar belanja hari ini dan tgl 9 berapa"</li>
+        <li><strong>Laporan &amp; pengeluaran:</strong> "berikan daftar laporan minggu ini dan hari ini" / "keluarin uang 50rb hari ini belanja gula total 50rb"</li>
       </ol>
     `);
   }
@@ -1192,17 +1243,60 @@ function initAiChatWidget() {
     return blocks.join('<br><br>');
   }
 
-  function handleSend() {
+  async function tryGeminiFallback(rawText) {
+    try {
+      const res = await fetch('/api/ai/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: rawText,
+          outlets: store.outlets,
+          products: store.products,
+          activeBatches: store.batches,
+          today: todayISO(),
+          learnedExamples: getLearnedExamples()
+        })
+      });
+      if (!res.ok) return { parsed: null, status: res.status };
+      const body = await res.json();
+      if (body?.ok && body.parsed) {
+        body.parsed._fromGemini = true;
+        return { parsed: body.parsed, status: 200 };
+      }
+      return { parsed: null, status: res.status };
+    } catch {
+      return { parsed: null, status: 0 };
+    }
+  }
+
+  async function handleSend() {
     const raw = input.value.trim();
     if (!raw) return;
     input.value = '';
     appendMessage('user', escapeHtml(raw));
 
-    const parsed = parseNLPCommand(raw, store.outlets, store.products, store.batches, todayISO());
+    let parsed = parseNLPCommand(raw, store.outlets, store.products, store.batches, todayISO());
     if (!parsed) {
-      appendMessage('bot', 'Maaf, perintah belum dikenali. Buka daftar perintah di atas atau tulis misalnya: <em>"daftar belanja hari ini"</em>, <em>"berikan daftar laporan minggu ini"</em>, atau <em>"semua outlet tidak ada return kecuali p bungin"</em>.');
+      const waitBubble = appendMessage('bot', '<span style="color:var(--text-muted)">Memproses perintah baru...</span>');
+      const fallback = await tryGeminiFallback(raw);
+      waitBubble.remove();
+      if (fallback.parsed) {
+        parsed = fallback.parsed;
+      } else {
+        const extraHint = fallback.status === 501
+          ? ' (Untuk memahami kalimat bebas di luar pola dasar, tambahkan <code>GEMINI_API_KEY</code> di Environment Variables Vercel).'
+          : '';
+        appendMessage('bot', `Maaf, perintah belum dikenali.${extraHint} Coba contoh seperti: <em>"p bungin bawa 10, skensa mami bawa 8"</em> atau <em>"konfirmasi return: p bungin sisa 2, skensa mami 1"</em>.`);
+        return;
+      }
+    }
+
+    const checked = validateParsedAction(parsed, store.outlets, store.products, store.batches);
+    if (!checked.ok) {
+      appendMessage('bot', `<span style="color:var(--status-expense-text);font-weight:600;">Ditolak agar tidak salah hitung:</span> ${escapeHtml(checked.reason)}`);
       return;
     }
+    parsed = checked.parsed;
 
     if (parsed.action === 'PROMPT_CLARIFY') {
       appendMessage('bot', escapeHtml(parsed.summary));
@@ -1249,7 +1343,7 @@ function initAiChatWidget() {
       try {
         if (parsed.action === 'CREATE_DROP') {
           await store.addBatch({
-            date: todayISO(),
+            date: data.date || todayISO(),
             outletId: data.outletId,
             productId: data.productId,
             productName: data.productName,
@@ -1257,6 +1351,9 @@ function initAiChatWidget() {
             priceUnit: data.priceUnit
           });
           box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Tersimpan: ${data.qtyDrop} cup ke ${escapeHtml(data.outletName)}.</span>`;
+        } else if (parsed.action === 'BATCH_CREATE_DROP') {
+          const count = await store.batchCreateDrops(data.items, data.date || todayISO());
+          box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Berhasil mencatat drop untuk ${count} outlet.</span>`;
         } else if (parsed.action === 'RECONCILE_BATCH') {
           const b = store.batches.find(x => x.outletId === data.outletId && x.status === 'ACTIVE')
             || store.batches.find(x => x.outletId === data.outletId);
@@ -1273,9 +1370,12 @@ function initAiChatWidget() {
             if (!target) {
               throw new Error(`Tidak ada batch aktif/unpaid di ${item.outletName}.`);
             }
+            if (item.qtyReturned > target.qtyDrop) {
+              throw new Error(`Sisa retur (${item.qtyReturned}) di ${item.outletName} melebihi titip (${target.qtyDrop} cup).`);
+            }
             return {
               id: target.id,
-              qtyReturned: Math.min(target.qtyDrop, Math.max(0, item.qtyReturned)),
+              qtyReturned: Math.max(0, item.qtyReturned),
               paymentStatus: item.paymentStatus,
               paidAt: item.paymentStatus === 'PAID' ? today : null
             };
@@ -1293,6 +1393,9 @@ function initAiChatWidget() {
             amount: data.amount
           });
           box.innerHTML = `<span style="color:var(--status-paid-text);font-weight:600;font-size:0.75rem;">Pengeluaran ${formatRupiah(data.amount)} masuk ke Buku Kas.</span>`;
+        }
+        if (parsed._fromGemini) {
+          saveLearnedExample(raw, parsed);
         }
         renderAll();
       } catch (err) {
@@ -1584,3 +1687,59 @@ function showToast(message) {
     toast.classList.add('hidden');
   }, 3200);
 }
+
+// --- AI Learning Center UI Functions ---
+function openAiLearningModal() {
+  document.getElementById('modalAiLearning').classList.remove('hidden');
+  renderLearnedPatterns();
+}
+window.openAiLearningModal = openAiLearningModal;
+
+function closeAiLearningModal() {
+  document.getElementById('modalAiLearning').classList.add('hidden');
+}
+window.closeAiLearningModal = closeAiLearningModal;
+
+function renderLearnedPatterns() {
+  const patterns = getLearnedExamples();
+  const list = document.getElementById('learnedPatternsList');
+  const count = document.getElementById('learnedCount');
+  if (!list || !count) return;
+  count.innerText = patterns.length;
+  list.innerHTML = patterns.map((p, i) => `
+    <div class="flex items-center justify-between p-2 bg-white border border-zinc-100 rounded-lg">
+      <div class="text-xs">
+        <div class="font-medium text-zinc-700">"${escapeHtml(p.phrase)}"</div>
+        <div class="text-zinc-500 italic">${escapeHtml(p.parsed?.action || '')}</div>
+      </div>
+      <button onclick="removeLearnedRule(${i})" class="text-rose-400 hover:text-rose-600 font-bold px-2">×</button>
+    </div>
+  `).join('');
+}
+
+function manualAddLearnedRule() {
+  const phrase = document.getElementById('learnNewPhrase').value;
+  const action = document.getElementById('learnNewAction').value;
+  if (!phrase) return;
+  const parsed = { action, title: 'Manual Learning', summary: 'Manual entry', data: {} };
+  saveLearnedExample(phrase, parsed);
+  document.getElementById('learnNewPhrase').value = '';
+  renderLearnedPatterns();
+}
+window.manualAddLearnedRule = manualAddLearnedRule;
+
+function removeLearnedRule(idx) {
+  const list = getLearnedExamples();
+  list.splice(idx, 1);
+  localStorage.setItem(LEARNED_AI_KEY, JSON.stringify(list));
+  renderLearnedPatterns();
+}
+window.removeLearnedRule = removeLearnedRule;
+
+function clearAllLearnedRules() {
+  if (confirm('Yakin ingin mereset semua pola AI?')) {
+    localStorage.removeItem(LEARNED_AI_KEY);
+    renderLearnedPatterns();
+  }
+}
+window.clearAllLearnedRules = clearAllLearnedRules;

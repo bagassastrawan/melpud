@@ -5,6 +5,7 @@ import {
   INITIAL_PRODUCTS,
   calculateFinancialSummary,
   parseNLPCommand,
+  validateParsedAction,
   parseAmount,
   categorizeExpense,
   getOutletBillingStatus,
@@ -272,4 +273,76 @@ test('AI Chatbot Commands (Batch 2): 6 Multi-Outlet, Expense List, & Report Comm
     { outletId: 'p-bungin', outletName: 'P. BUNGIN', qtyReturned: 2, paymentStatus: 'PAID' },
     { outletId: 'skensa-mami', outletName: 'SKENSA MAMI', qtyReturned: 1, paymentStatus: 'UNPAID' }
   ]);
+});
+
+test('AI Chatbot Commands (Batch 3): 5-Outlet Drop, 5-Outlet Return Confirmation, & Anti-Error Validator', () => {
+  // 1. Drop ke 5 outlet sekaligus
+  const drop5 = parseNLPCommand(
+    'p bungin bawa 10, p moyo bawa 12, p singkep bawa 15, bubuh bali bawa 10, skensa mami bawa 8',
+    INITIAL_OUTLETS,
+    INITIAL_PRODUCTS,
+    [],
+    '2026-11-12'
+  );
+  assert.equal(drop5.action, 'BATCH_CREATE_DROP');
+  assert.equal(drop5.data.date, '2026-11-12');
+  assert.equal(drop5.data.items.length, 5);
+  assert.deepEqual(
+    drop5.data.items.map(i => [i.outletId, i.qtyDrop]),
+    [
+      ['p-bungin', 10],
+      ['p-moyo-conato', 12],
+      ['p-singkep', 15],
+      ['bubuh-bali', 10],
+      ['skensa-mami', 8]
+    ]
+  );
+
+  // Date token must not pollute qtyDrop
+  const dropDated = parseNLPCommand('p bungin tanggal 12 nov bawa 7', INITIAL_OUTLETS, INITIAL_PRODUCTS, [], '2026-11-12');
+  assert.equal(dropDated.action, 'CREATE_DROP');
+  assert.equal(dropDated.data.qtyDrop, 7);
+  assert.equal(dropDated.data.date, '2026-11-12');
+
+  // 2. Konfirmasi return 5 outlet (termasuk angka tanpa ulangi kata "sisa")
+  const active5 = drop5.data.items.map((it, idx) => ({
+    id: `b-${idx}`,
+    date: '2026-11-12',
+    outletId: it.outletId,
+    qtyDrop: it.qtyDrop,
+    qtyReturned: null,
+    priceUnit: 5000,
+    status: 'ACTIVE',
+    paymentStatus: 'UNPAID'
+  }));
+
+  const ret5 = parseNLPCommand(
+    'konfirmasi return: p bungin sisa 2, p moyo 1, p singkep 3, bubuh bali 0, skensa mami 2',
+    INITIAL_OUTLETS,
+    INITIAL_PRODUCTS,
+    active5,
+    '2026-11-12'
+  );
+  assert.equal(ret5.action, 'BATCH_RECONCILE_MULTI');
+  assert.deepEqual(
+    ret5.data.items.map(i => [i.outletId, i.qtyReturned]),
+    [
+      ['p-bungin', 2],
+      ['p-moyo-conato', 1],
+      ['p-singkep', 3],
+      ['bubuh-bali', 0],
+      ['skensa-mami', 2]
+    ]
+  );
+
+  // Anti-wrong-value validation: sisa > titip must be rejected
+  const badRet = parseNLPCommand('p bungin sisa 25 belum dibayar', INITIAL_OUTLETS, INITIAL_PRODUCTS, active5, '2026-11-12');
+  const checkBad = validateParsedAction(badRet, INITIAL_OUTLETS, INITIAL_PRODUCTS, active5);
+  assert.equal(checkBad.ok, false);
+  assert.match(checkBad.reason, /melebihi jumlah titip/);
+
+  // Zero expense amount must be rejected
+  const badExp = parseNLPCommand('belanja susu', INITIAL_OUTLETS, INITIAL_PRODUCTS, active5, '2026-11-12');
+  const checkExp = validateParsedAction(badExp, INITIAL_OUTLETS, INITIAL_PRODUCTS, active5);
+  assert.equal(checkExp.ok, false);
 });
