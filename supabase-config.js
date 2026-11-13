@@ -1,13 +1,19 @@
+
 /**
- * Konfigurasi Koneksi Supabase untuk Web Melpud
+ * Konfigurasi Koneksi Supabase - Melpud
  *
- * Langkah menghubungkan ke website Supabase Anda:
- * 1. Jalankan isi file `supabase/schema.sql` di Supabase Dashboard -> SQL Editor.
- * 2. Buka Supabase Dashboard -> Project Settings -> API (atau Connect).
- * 3. Isi `url` dengan Project URL dan `publishableKey` dengan Publishable / anon public key.
- *    PERINGATAN KEAMANAN: JANGAN PERNAH memasukkan `service_role` atau `sb_secret_...` di sini.
+ * Environment Variables diatur melalui Vercel Dashboard.
+ * Tidak memerlukan file .env lokal.
  */
+
 export const SUPABASE_CONFIG = {
-  url: (typeof window !== 'undefined' && window.SUPABASE_URL) || '',
-  publishableKey: (typeof window !== 'undefined' && window.SUPABASE_ANON_KEY) || ''
+  url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  publishableKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
 };
+
+// Validasi konfigurasi
+if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.publishableKey) {
+  console.error(
+    'Supabase configuration is missing. Check Vercel Environment Variables.'
+  );
+}
