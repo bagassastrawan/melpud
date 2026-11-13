@@ -92,7 +92,26 @@ export function mapSummaryFromDb(row) {
   };
 }
 
+async function ensureConfigLoaded() {
+  if (isSupabaseConfigured()) return true;
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.configured && data.url && data.publishableKey) {
+        SUPABASE_CONFIG.url = data.url;
+        SUPABASE_CONFIG.publishableKey = data.publishableKey;
+        return true;
+      }
+    }
+  } catch {
+    // ignore if offline or local server
+  }
+  return false;
+}
+
 async function getClient() {
+  await ensureConfigLoaded();
   if (!isSupabaseConfigured()) return null;
   if (!clientPromise) {
     clientPromise = import(SUPABASE_CDN_URL).then(({ createClient }) =>
@@ -168,9 +187,21 @@ export class MelpudRepository {
 
     const firstError = outletsRes.error || productsRes.error || batchesRes.error || expensesRes.error || summaryRes.error;
     if (firstError) {
-      this.mode = 'error';
+      console.warn('Supabase load error (fallback to local storage):', firstError.message);
+      this.mode = 'local';
       this.lastError = firstError.message;
-      throw new Error(`Gagal memuat data Supabase: ${firstError.message}`);
+      const outlets = loadLocal(LOCAL_KEYS.outlets, INITIAL_OUTLETS);
+      const products = loadLocal(LOCAL_KEYS.products, INITIAL_PRODUCTS);
+      const batches = loadLocal(LOCAL_KEYS.batches, []);
+      const expenses = loadLocal(LOCAL_KEYS.expenses, []);
+      return {
+        mode: 'local',
+        outlets,
+        products,
+        batches,
+        expenses,
+        summary: calculateFinancialSummary(batches, expenses)
+      };
     }
 
     this.mode = 'supabase';
