@@ -95,7 +95,10 @@ export function mapSummaryFromDb(row) {
 async function ensureConfigLoaded() {
   if (isSupabaseConfigured()) return true;
   try {
-    const res = await fetch('/api/config');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('/api/config', { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (res.ok) {
       const data = await res.json();
       if (data.configured && data.url && data.publishableKey) {
@@ -105,7 +108,7 @@ async function ensureConfigLoaded() {
       }
     }
   } catch {
-    // ignore if offline or local server
+    // fallback immediately without hanging
   }
   return false;
 }
