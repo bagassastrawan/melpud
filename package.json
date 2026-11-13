@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "build": "node --input-type=module -e \"import fs from 'node:fs'; fs.mkdirSync('dist', { recursive: true }); for (const f of ['index.html', 'styles.css', 'app.js', 'core.js', 'db.js', 'supabase-config.js']) fs.copyFileSync(f, 'dist/' + f);\"",
+    "build": "node --input-type=module -e \"import fs from 'node:fs'; fs.mkdirSync('dist/api', { recursive: true }); for (const f of ['index.html', 'styles.css', 'app.js', 'core.js', 'db.js', 'supabase-config.js']) fs.copyFileSync(f, 'dist/' + f); if (fs.existsSync('api/config.js')) fs.copyFileSync('api/config.js', 'dist/api/config.js');\"",
     "test": "node --test test/engine.test.js"
   }
 }
