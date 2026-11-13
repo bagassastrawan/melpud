@@ -1277,18 +1277,10 @@ function initAiChatWidget() {
 
     let parsed = parseNLPCommand(raw, store.outlets, store.products, store.batches, todayISO());
     if (!parsed) {
-      const waitBubble = appendMessage('bot', '<span style="color:var(--text-muted)">Memproses perintah baru...</span>');
-      const fallback = await tryGeminiFallback(raw);
-      waitBubble.remove();
-      if (fallback.parsed) {
-        parsed = fallback.parsed;
-      } else {
-        const extraHint = fallback.status === 501
-          ? ' (Untuk memahami kalimat bebas di luar pola dasar, tambahkan <code>GEMINI_API_KEY</code> di Environment Variables Vercel).'
-          : '';
-        appendMessage('bot', `Maaf, perintah belum dikenali.${extraHint} Coba contoh seperti: <em>"p bungin bawa 10, skensa mami bawa 8"</em> atau <em>"konfirmasi return: p bungin sisa 2, skensa mami 1"</em>.`);
-        return;
-      }
+      savePendingAiCommand(raw);
+      updatePendingAiBadge();
+      appendMessage('bot', '<span style="color:var(--status-paid-text);font-weight:600;">Pesan: Sedang dipelajari oleh AI.</span><br><span style="font-size:0.7rem;color:var(--text-muted)">Perintah baru Anda telah masuk ke AI Learning Center untuk divalidasi.</span>');
+      return;
     }
 
     const checked = validateParsedAction(parsed, store.outlets, store.products, store.batches);
@@ -1688,10 +1680,36 @@ function showToast(message) {
   }, 3200);
 }
 
-// --- AI Learning Center UI Functions ---
+// --- AI Pending Commands Validation Queue ---
+const PENDING_AI_KEY = 'melpud_ai_pending';
+
+function getPendingAiCommands() {
+  try {
+    const raw = localStorage.getItem(PENDING_AI_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingAiCommand(phrase) {
+  const list = getPendingAiCommands();
+  if (!list.some(x => x.phrase === phrase)) {
+    list.push({ phrase, timestamp: new Date().toISOString() });
+    localStorage.setItem(PENDING_AI_KEY, JSON.stringify(list.slice(-30)));
+  }
+  updatePendingAiBadge();
+}
+
+function updatePendingAiBadge() {
+  const count = getPendingAiCommands().length;
+  const el = document.getElementById('pendingAiCount');
+  if (el) el.innerText = count;
+}
+
 function openAiLearningModal() {
   document.getElementById('modalAiLearning').classList.remove('hidden');
-  renderLearnedPatterns();
+  renderPendingAiList();
 }
 window.openAiLearningModal = openAiLearningModal;
 
@@ -1700,46 +1718,82 @@ function closeAiLearningModal() {
 }
 window.closeAiLearningModal = closeAiLearningModal;
 
-function renderLearnedPatterns() {
-  const patterns = getLearnedExamples();
-  const list = document.getElementById('learnedPatternsList');
-  const count = document.getElementById('learnedCount');
-  if (!list || !count) return;
-  count.innerText = patterns.length;
-  list.innerHTML = patterns.map((p, i) => `
-    <div class="flex items-center justify-between p-2 bg-white border border-zinc-100 rounded-lg">
-      <div class="text-xs">
-        <div class="font-medium text-zinc-700">"${escapeHtml(p.phrase)}"</div>
-        <div class="text-zinc-500 italic">${escapeHtml(p.parsed?.action || '')}</div>
+function renderPendingAiList() {
+  const items = getPendingAiCommands();
+  const container = document.getElementById('pendingAiList');
+  if (!container) return;
+  if (items.length === 0) {
+    container.innerHTML = '<div class="text-zinc-400 text-xs text-center py-6">Tidak ada perintah baru yang menunggu validasi.</div>';
+    return;
+  }
+  container.innerHTML = items.map((item, idx) => `
+    <div class="p-3 bg-zinc-50 border border-zinc-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-3">
+      <div>
+        <div class="font-medium text-zinc-800">"${escapeHtml(item.phrase)}"</div>
+        <div class="text-[10px] text-zinc-400">${new Date(item.timestamp).toLocaleString('id-ID')}</div>
       </div>
-      <button onclick="removeLearnedRule(${i})" class="text-rose-400 hover:text-rose-600 font-bold px-2">×</button>
+      <div class="flex items-center gap-2">
+        <select id="pendingAction_${idx}" class="px-2 py-1 border rounded-lg text-xs bg-white">
+          <option value="CREATE_DROP">CREATE_DROP (Titip)</option>
+          <option value="RECONCILE_BATCH">RECONCILE_BATCH (Retur)</option>
+          <option value="RECORD_EXPENSE">RECORD_EXPENSE (Belanja)</option>
+        </select>
+        <button onclick="approvePendingAi(${idx})" class="px-3 py-1 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 whitespace-nowrap">Validasi & Pelajari</button>
+        <button onclick="rejectPendingAi(${idx})" class="px-2.5 py-1 bg-rose-100 text-rose-700 rounded-lg font-medium hover:bg-rose-200">Hapus</button>
+      </div>
     </div>
   `).join('');
 }
 
-function manualAddLearnedRule() {
-  const phrase = document.getElementById('learnNewPhrase').value;
-  const action = document.getElementById('learnNewAction').value;
-  if (!phrase) return;
-  const parsed = { action, title: 'Manual Learning', summary: 'Manual entry', data: {} };
-  saveLearnedExample(phrase, parsed);
-  document.getElementById('learnNewPhrase').value = '';
-  renderLearnedPatterns();
+function approvePendingAi(idx) {
+  const items = getPendingAiCommands();
+  const target = items[idx];
+  if (!target) return;
+  const actionSel = document.getElementById(`pendingAction_${idx}`);
+  const selectedAction = actionSel ? actionSel.value : 'CREATE_DROP';
+  
+  saveLearnedExample(target.phrase, { action: selectedAction, title: 'AI Learning Center Rule', summary: target.phrase, data: {} });
+  items.splice(idx, 1);
+  localStorage.setItem(PENDING_AI_KEY, JSON.stringify(items));
+  updatePendingAiBadge();
+  renderPendingAiList();
+  showToast('Perintah berhasil divalidasi dan dipelajari oleh AI!');
 }
-window.manualAddLearnedRule = manualAddLearnedRule;
+window.approvePendingAi = approvePendingAi;
 
-function removeLearnedRule(idx) {
-  const list = getLearnedExamples();
-  list.splice(idx, 1);
-  localStorage.setItem(LEARNED_AI_KEY, JSON.stringify(list));
-  renderLearnedPatterns();
+function approvePendingAi(idx) {
+  const items = getPendingAiCommands();
+  const target = items[idx];
+  if (!target) return;
+  // Save to learned examples as CREATE_DROP or default intent
+  saveLearnedExample(target.phrase, { action: 'CREATE_DROP', title: 'Learned via Pending Queue', summary: target.phrase, data: {} });
+  items.splice(idx, 1);
+  localStorage.setItem(PENDING_AI_KEY, JSON.stringify(items));
+  updatePendingAiBadge();
+  renderPendingAiList();
+  showToast('Perintah berhasil dikonfirmasi dan dimasukkan ke cakupan AI!');
 }
-window.removeLearnedRule = removeLearnedRule;
+window.approvePendingAi = approvePendingAi;
 
-function clearAllLearnedRules() {
-  if (confirm('Yakin ingin mereset semua pola AI?')) {
-    localStorage.removeItem(LEARNED_AI_KEY);
-    renderLearnedPatterns();
+function rejectPendingAi(idx) {
+  const items = getPendingAiCommands();
+  items.splice(idx, 1);
+  localStorage.setItem(PENDING_AI_KEY, JSON.stringify(items));
+  updatePendingAiBadge();
+  renderPendingAiList();
+}
+window.rejectPendingAi = rejectPendingAi;
+
+function clearAllPendingAi() {
+  if (confirm('Hapus semua antrean pending?')) {
+    localStorage.removeItem(PENDING_AI_KEY);
+    updatePendingAiBadge();
+    renderPendingAiList();
   }
 }
-window.clearAllLearnedRules = clearAllLearnedRules;
+window.clearAllPendingAi = clearAllPendingAi;
+
+// Initialize badge count on load
+document.addEventListener('DOMContentLoaded', () => {
+  updatePendingAiBadge();
+});

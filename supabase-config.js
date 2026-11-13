@@ -8,6 +8,6 @@
  *    PERINGATAN KEAMANAN: JANGAN PERNAH memasukkan `service_role` atau `sb_secret_...` di sini.
  */
 export const SUPABASE_CONFIG = {
-  url: '',
-  publishableKey: ''
+  url: (typeof window !== 'undefined' && window.SUPABASE_URL) || '',
+  publishableKey: (typeof window !== 'undefined' && window.SUPABASE_ANON_KEY) || ''
 };

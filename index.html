@@ -64,7 +64,7 @@
         </button>
         <button onclick="openAiLearningModal()" class="nav-item">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          <span>AI Learning Center</span>
+          <span>AI Learning Center (<span id="pendingAiCount">0</span>)</span>
         </button>
       </nav>
 
@@ -708,33 +708,22 @@
             <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold">🧠</div>
             <div>
               <h3 class="font-bold text-zinc-900 text-sm">AI Learning Center</h3>
-              <p class="text-xs text-zinc-500">Pola perintah dan memori pengetahuan adaptif AI</p>
+              <p class="text-xs text-zinc-500">Pola perintah baru yang belum dikenali sedang dipelajari oleh AI</p>
             </div>
           </div>
           <button onclick="closeAiLearningModal()" class="text-zinc-400 hover:text-zinc-600 font-bold text-lg px-2">&times;</button>
         </div>
         <div class="py-4 space-y-4 overflow-y-auto flex-1">
           <div class="bg-zinc-50 p-4 rounded-xl border border-zinc-200 text-xs space-y-2">
-            <div class="font-semibold text-zinc-800">Ajarkan Perintah / Aturan Baru</div>
-            <div class="flex gap-2">
-              <input id="learnNewPhrase" type="text" placeholder="Contoh: 'tambah titip p bungin 15'" class="flex-1 px-3 py-2 border rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-600" />
-              <select id="learnNewAction" class="px-2 py-2 border rounded-lg text-xs bg-white">
-                <option value="CREATE_DROP">CREATE_DROP (Titip)</option>
-                <option value="RECONCILE_BATCH">RECONCILE_BATCH (Retur)</option>
-                <option value="RECORD_EXPENSE">RECORD_EXPENSE (Belanja)</option>
-              </select>
-              <button onclick="manualAddLearnedRule()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700">Simpan</button>
-            </div>
+            <div class="font-semibold text-zinc-800">Daftar Perintah Baru (Pending Review)</div>
+            <p class="text-zinc-500 text-[11px]">Ketika ada perintah baru yang belum dikenali, AI otomatis masuk ke sini. Pilih aksi yang sesuai lalu klik "Validasi & Pelajari".</p>
           </div>
-          <div>
-            <div class="text-xs font-bold text-zinc-700 mb-2">Daftar Pola Tersimpan (<span id="learnedCount">0</span>)</div>
-            <div id="learnedPatternsList" class="space-y-2">
-              <!-- populated dynamically -->
-            </div>
+          <div id="pendingAiList" class="space-y-3">
+            <!-- populated dynamically -->
           </div>
         </div>
         <div class="pt-4 border-t border-zinc-200 flex justify-between items-center text-xs">
-          <button onclick="clearAllLearnedRules()" class="text-rose-600 hover:underline">Reset Semua Memori AI</button>
+          <button onclick="clearAllPendingAi()" class="text-rose-600 hover:underline">Hapus Semua</button>
           <button onclick="closeAiLearningModal()" class="px-4 py-2 bg-zinc-800 text-white rounded-lg hover:bg-zinc-700">Tutup</button>
         </div>
       </div>
