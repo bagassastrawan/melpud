@@ -175,16 +175,48 @@ export class MelpudRepository {
         summary: calculateFinancialSummary(batches, expenses)
       };
     }
-
     const supabase = await getClient();
-    const [outletsRes, productsRes, batchesRes, expensesRes, summaryRes] = await Promise.all([
-      supabase.from('outlets').select('*').order('created_at', { ascending: true }),
-      supabase.from('products').select('*').order('created_at', { ascending: true }),
-      supabase.from('consignment_batches').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('expenses').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('view_financial_summary').select('*').single()
-    ]);
+    if (!supabase) {
+      this.mode = 'local';
+      const outlets = loadLocal(LOCAL_KEYS.outlets, INITIAL_OUTLETS);
+      const products = loadLocal(LOCAL_KEYS.products, INITIAL_PRODUCTS);
+      const batches = loadLocal(LOCAL_KEYS.batches, []);
+      const expenses = loadLocal(LOCAL_KEYS.expenses, []);
+      return {
+        mode: 'local',
+        outlets,
+        products,
+        batches,
+        expenses,
+        summary: calculateFinancialSummary(batches, expenses)
+      };
+    }
 
+    let outletsRes, productsRes, batchesRes, expensesRes, summaryRes;
+    try {
+      [outletsRes, productsRes, batchesRes, expensesRes, summaryRes] = await Promise.all([
+        supabase.from('outlets').select('*').order('created_at', { ascending: true }),
+        supabase.from('products').select('*').order('created_at', { ascending: true }),
+        supabase.from('consignment_batches').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('expenses').select('*').order('date', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('view_financial_summary').select('*').single()
+      ]);
+    } catch (err) {
+      console.warn('Supabase fetch exception (fallback to local):', err);
+      this.mode = 'local';
+      const outlets = loadLocal(LOCAL_KEYS.outlets, INITIAL_OUTLETS);
+      const products = loadLocal(LOCAL_KEYS.products, INITIAL_PRODUCTS);
+      const batches = loadLocal(LOCAL_KEYS.batches, []);
+      const expenses = loadLocal(LOCAL_KEYS.expenses, []);
+      return {
+        mode: 'local',
+        outlets,
+        products,
+        batches,
+        expenses,
+        summary: calculateFinancialSummary(batches, expenses)
+      };
+    }
     const firstError = outletsRes.error || productsRes.error || batchesRes.error || expensesRes.error || summaryRes.error;
     if (firstError) {
       console.warn('Supabase load error (fallback to local storage):', firstError.message);
