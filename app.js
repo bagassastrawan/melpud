@@ -1761,19 +1761,7 @@ function approvePendingAi(idx) {
 }
 window.approvePendingAi = approvePendingAi;
 
-function approvePendingAi(idx) {
-  const items = getPendingAiCommands();
-  const target = items[idx];
-  if (!target) return;
-  // Save to learned examples as CREATE_DROP or default intent
-  saveLearnedExample(target.phrase, { action: 'CREATE_DROP', title: 'Learned via Pending Queue', summary: target.phrase, data: {} });
-  items.splice(idx, 1);
-  localStorage.setItem(PENDING_AI_KEY, JSON.stringify(items));
-  updatePendingAiBadge();
-  renderPendingAiList();
-  showToast('Perintah berhasil dikonfirmasi dan dimasukkan ke cakupan AI!');
-}
-window.approvePendingAi = approvePendingAi;
+
 
 function rejectPendingAi(idx) {
   const items = getPendingAiCommands();
